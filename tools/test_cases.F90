@@ -708,6 +708,7 @@
       integer, pointer :: ntiles_g
       real,    pointer :: acapN, acapS, globalarea
 
+      if( is_master() ) write(*,*) ' init_case: enter. test_case=',test_case    
       is  = bd%is
       ie  = bd%ie
       js  = bd%js
@@ -786,13 +787,17 @@
       enddo
       call mpp_update_domains( f0, domain )
       if (cubed_sphere) call fill_corners(f0, npx, npy, YDir)
+      if( is_master() ) write(*,*) ' init_case: fill_corners. test_case=',test_case    
 
       delp(isd:is-1,jsd:js-1,1:npz)=0.
       delp(isd:is-1,je+1:jed,1:npz)=0.
       delp(ie+1:ied,jsd:js-1,1:npz)=0.
       delp(ie+1:ied,je+1:jed,1:npz)=0.
 
-#if defined(SW_DYNAMICS)
+      if( is_master() ) write(*,*) ' init_case: start select. test_case=',test_case    
+!!  #if defined(SW_DYNAMICS)
+#ifdef SW_DYNAMICS
+      if( is_master() ) write(*,*) ' test_case=',test_case    
       select case (test_case)
       case(-2)
       case(-1)
@@ -905,6 +910,7 @@
       call mp_stop()
       stop
       case(0)
+         ubar = 0.0 
          do j=jsd,jed
             do i=isd,ied
 
@@ -1166,6 +1172,7 @@
          enddo
          initWindsCase=initWindsCase5
       case(6)
+         ubar = 0.0 
          gh0  = 8.E3*Grav
          R    = 4.
          omg  = 7.848E-6
@@ -1218,6 +1225,7 @@
          initWindsCase=initWindsCase6
       case(7)
 ! Barotropically unstable jet
+         ubar = 0.0  
          gh0  = 10.E3*Grav
          phis = 0.0
          r0 = radius/12.
@@ -4604,7 +4612,8 @@ end subroutine terminator_tracers
 
          myDay = ndays*((FLOAT(nt)/FLOAT(maxnt)))
 
-#if defined(SW_DYNAMICS)
+!!  #if defined(SW_DYNAMICS)
+#ifdef SW_DYNAMICS
       if (test_case==0) then
          phi0 = 0.0
          do j=js,je
@@ -4867,7 +4876,8 @@ end subroutine terminator_tracers
       tKE   = 0.0
       tener = 0.0
       tvort = 0.0
-#if defined(SW_DYNAMICS)
+!!  #if defined(SW_DYNAMICS)
+#ifdef SW_DYNAMICS
       do k=1,1
 #else
       do k=1,npz
@@ -4941,13 +4951,15 @@ end subroutine terminator_tracers
          arr_r4(3) = (tvort-tvort_orig)/tvort_orig
          arr_r4(4) = tKE
          if (test_case==12) arr_r4(4) = L2_norm 
-#if defined(SW_DYNAMICS)
+!!  #if defined(SW_DYNAMICS)
+#ifdef SW_DYNAMICS
          myRec = nt+1
 #else
          myRec = myDay*86400.0/dtout + 1 
 #endif
          if (is_master()) write(consv_lun,rec=myRec) arr_r4(1:4)
-#if defined(SW_DYNAMICS)
+!!  #if defined(SW_DYNAMICS)
+#ifdef SW_DYNAMICS
          if ( (is_master()) .and. MOD(nt,monitorFreq)==0) then
 #else
          if ( (is_master()) ) then 
@@ -5476,7 +5488,8 @@ end subroutine terminator_tracers
 
       real, allocatable :: tmp(:,:,:)
       real, allocatable :: tmpA(:,:,:)
-#if defined(SW_DYNAMICS) 
+!!  #if defined(SW_DYNAMICS) 
+#ifdef SW_DYNAMICS
       real, allocatable :: ut(:,:,:)
       real, allocatable :: vt(:,:,:)
 #else       
@@ -5518,7 +5531,8 @@ end subroutine terminator_tracers
 
       allocate( tmp(npx  ,npy  ,nregions) )
       allocate( tmpA(npx-1,npy-1,nregions) )
-#if defined(SW_DYNAMICS) 
+!!  #if defined(SW_DYNAMICS) 
+#ifdef SW_DYNAMICS
       allocate( ut(npx-1,npy-1,nregions) )
       allocate( vt(npx-1,npy-1,nregions) )
 #else
@@ -5537,7 +5551,8 @@ end subroutine terminator_tracers
          call wrtvar_ncdf(ncid, lons_id, nout, is,ie+1, js,je+1, npx+1, npy+1, 1, nregions, tmp(1:npx,1:npy,1:nregions), 3)
       endif
 
-#if defined(SW_DYNAMICS)
+!!  #if defined(SW_DYNAMICS)
+#ifdef SW_DYNAMICS
       if (test_case > 1) then
          tmpA(is:ie,js:je,tile) = delp(is:ie,js:je,1)/Grav
 
@@ -5697,7 +5712,8 @@ end subroutine terminator_tracers
 
       deallocate( tmp )
       deallocate( tmpA )
-#if defined(SW_DYNAMICS) 
+!!  #if defined(SW_DYNAMICS) 
+#ifdef SW_DYNAMICS
       deallocate( ut )
       deallocate( vt )
 #else
@@ -5800,7 +5816,8 @@ end subroutine terminator_tracers
 
       nout = nout + 1
 
-#if defined(SW_DYNAMICS)
+!!  #if defined(SW_DYNAMICS)
+#ifdef SW_DYNAMICS
       if (test_case > 1) then
          call atob_s(delp(:,:,1)/Grav, tmp(isd:ied+1,jsd:jed+1,tile), npx,npy, dxa, dya, gridstruct%nested) !, altInterp=1)
          tmpA(is:ie,js:je,tile) = delp(is:ie,js:je,1)/Grav

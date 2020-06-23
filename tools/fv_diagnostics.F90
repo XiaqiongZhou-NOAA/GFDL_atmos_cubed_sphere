@@ -3505,7 +3505,14 @@ contains
  real, dimension(2*km+1):: pn, gz
  integer n,i,j,k, k1, k2, l
 
+#ifdef SW_DYNAMICS
+ k2 = 1
+#else
  k2 = max(12, km/2+1)
+#endif
+    if ( is_master() ) then
+       write(*,*) ' enter check: km, k2 kd ',km,k2,kd
+    endif
 
 !$OMP parallel do default(none) shared(k2,is,ie,js,je,km,kd,id,log_p,peln,a2,wz)   &
 !$OMP             private(i,j,n,k,k1,l,pn,gz)
@@ -3518,11 +3525,13 @@ contains
           pn(k) = peln(i,k,j)
           gz(k) = wz(i,j,k)
        enddo
+#ifndef SW_DYNAMICS
        do k=km+2, km+k2
           l = 2*(km+1) - k
           gz(k) = 2.*gz(km+1) - gz(l)
           pn(k) = 2.*pn(km+1) - pn(l)
        enddo
+#endif
        k1 = 1
        do 1000 n=1,kd
           if( id(n)<0 ) goto 1000

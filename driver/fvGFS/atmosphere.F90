@@ -312,6 +312,7 @@ contains
    cold_start = (.not.file_exist('INPUT/fv_core.res.nc') .and. .not.file_exist('INPUT/fv_core.res.tile1.nc'))
 
    call fv_init( Atm, dt_atmos, grids_on_this_pe, p_split )  ! allocates Atm components
+   if (mpp_pe() == 0) write(*,*) 'atmosphere_init: after call fv_init '
 
    do n=1,ngrids
       if (grids_on_this_pe(n)) mytile = n
@@ -356,6 +357,12 @@ contains
    cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
 #endif
 
+   if (mpp_pe() == 0) then
+   write(*,*)'sphum=',sphum
+   write(*,*)'liq_wat=',liq_wat
+   write(*,*)' Atm(mytile)%flagstruct%nwat)=', Atm(mytile)%flagstruct%nwat
+   endif 
+
    if (max(sphum,liq_wat,ice_wat,rainwat,snowwat,graupel) > Atm(mytile)%flagstruct%nwat) then
       call mpp_error (FATAL,' atmosphere_init: condensate species are not first in the list of &
                             &tracers defined in the field_table')
@@ -399,14 +406,17 @@ contains
 !--- allocate pref
    allocate(pref(npz+1,2), dum1d(npz+1))
 
+   if (mpp_pe() == 0) write(*,*) 'atmosphere_init: before call set_domain '
    call set_domain ( Atm(mytile)%domain )
    call fv_restart(Atm(mytile)%domain, Atm, dt_atmos, seconds, days, cold_start, Atm(mytile)%gridstruct%grid_type, grids_on_this_pe)
+   if (mpp_pe() == 0) write(*,*) 'atmosphere_init: after call fv_restart '
 
    fv_time = Time
 
 !----- initialize atmos_axes and fv_dynamics diagnostics
        !I've had trouble getting this to work with multiple grids at a time; worth revisiting?
    call fv_diag_init(Atm(mytile:mytile), Atm(mytile)%atmos_axes, Time, npx, npy, npz, Atm(mytile)%flagstruct%p_ref)
+   if (mpp_pe() == 0) write(*,*) 'atmosphere_init: after call fv_diag_init '
 
 !---------- reference profile -----------
     ps1 = 101325.
@@ -415,6 +425,7 @@ contains
     pref(npz+1,2) = ps2
     call get_eta_level ( npz, ps1, pref(1,1), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
     call get_eta_level ( npz, ps2, pref(1,2), dum1d, Atm(mytile)%ak, Atm(mytile)%bk )
+   if (mpp_pe() == 0) write(*,*) 'atmosphere_init: after call get_eta_level '
 
 !  --- initialize clocks for dynamics, physics_down and physics_up
    id_dynam     = mpp_clock_id ('FV dy-core',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
@@ -504,6 +515,7 @@ contains
 
    n = mytile
    call switch_current_Atm(Atm(n)) 
+   if (mpp_pe() == 0) write(*,*) 'atmosphere_init: end '
       
  end subroutine atmosphere_init
 
@@ -910,9 +922,15 @@ contains
 
    if (Atm(mytile)%flagstruct%hydrostatic) then
      !--- generate dz using hydrostatic assumption
+#ifdef SW_DYNAMICS
+     dz(isc:iec,jsc:jec,1) = (rdgas/grav)*Atm(mytile)%pt(isc:iec,jsc:jec,1)  &
+                                 * (Atm(mytile)%peln(isc:iec,1,jsc:jec)          &
+                                 -  Atm(mytile)%peln(isc:iec,2,jsc:jec))
+#else    
      dz(isc:iec,jsc:jec,1:npz) = (rdgas/grav)*Atm(mytile)%pt(isc:iec,jsc:jec,1:npz)  &
                                  * (Atm(mytile)%peln(isc:iec,1:npz,jsc:jec)          &
                                  -  Atm(mytile)%peln(isc:iec,2:npz+1,jsc:jec))
+#endif
    else
      !--- use non-hydrostatic delz directly
      dz(isc:iec,jsc:jec,1:npz) = Atm(mytile)%delz(isc:iec,jsc:jec,1:npz)
@@ -938,7 +956,11 @@ contains
      hgt(1:npx,1:npy,1:npz+1) = z(isc:iec,jsc:jec,1:npz+1)
    elseif (position == "layer") then
      allocate (hgt(npx,npy,npz))
+#ifdef SW_DYNAMICS
+     hgt(1:npx,1:npy,1) = 0.5d0 * (z(isc:iec,jsc:jec,1) + z(isc:iec,jsc:jec,2))
+#else
      hgt(1:npx,1:npy,1:npz) = 0.5d0 * (z(isc:iec,jsc:jec,1:npz) + z(isc:iec,jsc:jec,2:npz+1))
+#endif
    endif
 
  end subroutine atmosphere_hgt
@@ -1149,6 +1171,9 @@ contains
    enddo
 
    if ( present(slp) ) then
+#ifdef SW_DYNAMICS
+     kr=1
+#else
      ! determine 0.8 sigma reference level
      sigtop = Atm(mytile)%ak(1)/pstd_mks+Atm(mytile)%bk(1)
      do k = 1, npz
@@ -1159,6 +1184,7 @@ contains
         endif
         sigtop = sigbot
      enddo
+#endif
      do j=jsc,jec
         do i=isc,iec
            ! sea level pressure
@@ -1225,6 +1251,9 @@ contains
    rrg  = rdgas / grav
 
    if (first_time) then
+#ifdef SW_DYNAMICS
+     kr=1
+#else
      ! determine 0.8 sigma reference level
      sigtop = Atm(mytile)%ak(1)/pstd_mks+Atm(mytile)%bk(1)
      do k = 1, npz
@@ -1235,6 +1264,7 @@ contains
        endif
        sigtop = sigbot
      enddo
+#endif
      !--- allocate the DYCORE_Data container
      do nb = 1,Atm_block%nblks
        call DYCORE_Data(nb)%Coupling%create (Atm_block%blksz(nb), nq)
@@ -1361,7 +1391,9 @@ contains
    dnats = Atm(mytile)%flagstruct%dnats
    nq_adv = nq - dnats
 
+#ifndef SW_DYNAMICS
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
+#endif
 
    if (IAU_Data%in_interval) then
       if (IAU_Data%drymassfixer) then
@@ -1435,7 +1467,9 @@ contains
 !SJL: perform vertical filling to fix the negative humidity if the SAS convection scheme is used
 !     This call may be commented out if RAS or other positivity-preserving CPS is used.
      blen = Atm_block%blksz(nb)
+#ifndef SW_DYNAMICS
      call fill_gfs(blen, npz, IPD_Data(nb)%Statein%prsi, IPD_Data(nb)%Stateout%gq0, 1.e-9_kind_phys)
+#endif
 
      do k = 1, npz
        if(flip_vc) then
@@ -1552,6 +1586,8 @@ contains
 #endif
 
    call mpp_clock_begin (id_dynam)
+
+#ifndef SW_DYNAMICS
        call timing_on('FV_UPDATE_PHYS')
     call fv_update_phys( dt_atmos, isc, iec, jsc, jec, isd, ied, jsd, jed, Atm(n)%ng, nt_dyn, &
                          Atm(n)%u,  Atm(n)%v,   Atm(n)%w,  Atm(n)%delp, Atm(n)%pt,         &
@@ -1565,6 +1601,8 @@ contains
                          Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct,            &
                          Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop)
        call timing_off('FV_UPDATE_PHYS')
+#endif       ! SW_DYNAMICS
+
    call mpp_clock_end (id_dynam)
 
 !--- nesting update after updating atmospheric variables with

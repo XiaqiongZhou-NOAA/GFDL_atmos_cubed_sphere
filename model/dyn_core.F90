@@ -439,6 +439,7 @@ contains
          call start_group_halo_update(i_pack(7), w, domain)
                              call timing_off('COMM_TOTAL')
 
+         if( is_master() ) write(*,*) ' dyn_core: gz npz=',npz
       if ( it==1 ) then
          if (gridstruct%nested .or. gridstruct%regional) then
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,gz,zs,delz)
@@ -474,6 +475,7 @@ contains
 
 #ifdef SW_DYNAMICS
      if (test_case>1) then
+         if( is_master() ) write(*,*) ' dyn_core: test_case=',test_case
 #ifdef USE_OLD
      if (test_case==9) call case9_forcing1(phis, time_total)
 #endif
@@ -515,6 +517,7 @@ contains
                                                      call timing_off('COMM_TOTAL')
 
                                                      call timing_on('c_sw')
+         if( is_master() ) write(*,*) ' dyn_core: before c_sw'
 !$OMP parallel do default(none) shared(npz,isd,jsd,delpc,delp,ptc,pt,u,v,w,uc,vc,ua,va, &
 !$OMP                                  omga,ut,vt,divgd,flagstruct,dt2,hydrostatic,bd,  &
 !$OMP                                  gridstruct)
@@ -562,6 +565,7 @@ contains
       endif
 
       if ( hydrostatic ) then
+         if( is_master() ) write(*,*) ' dyn_core: before geopk'
            call geopk(ptop, pe, peln, delpc, pkc, gz, phis, ptc,  &
 #ifdef MULTI_GASES
                       kapad, &
@@ -597,12 +601,14 @@ contains
            enddo
         endif
                                             call timing_on('UPDATE_DZ_C')
+         if( is_master() ) write(*,*) ' dyn_core: before update_dz_c'
          call update_dz_c(is, ie, js, je, npz, ng, dt2, dp_ref, zs, gridstruct%area, ut, vt, gz, ws3, &
              npx, npy, gridstruct%sw_corner, gridstruct%se_corner, &
              gridstruct%ne_corner, gridstruct%nw_corner, bd, gridstruct%grid_type)
                                             call timing_off('UPDATE_DZ_C')
 
                                                call timing_on('Riem_Solver')
+         if( is_master() ) write(*,*) ' dyn_core: before riem_solver_c '
            call Riem_Solver_C( ms, dt2,   is,  ie,   js,   je,   npz,   ng,   &
                                akap, cappa, cp,  &
 #ifdef MULTI_GASES
@@ -650,6 +656,7 @@ contains
 
       endif   ! end hydro check
 
+         if( is_master() ) write(*,*) ' dyn_core: before p_grad_c '
       call p_grad_c(dt2, npz, delpc, pkc, gz, uc, vc, bd, gridstruct%rdxc, gridstruct%rdyc, hydrostatic)
 
                                                                    call timing_on('COMM_TOTAL')
@@ -717,6 +724,7 @@ contains
                                       reg_bc_update_time )
       endif
 
+         if( is_master() ) write(*,*) ' dyn_core: before inline_q '
     if ( flagstruct%inline_q ) then
       if ( gridstruct%nested ) then
             do iq=1,nq
@@ -743,6 +751,7 @@ contains
     if (first_call .and. is_master() .and. last_step) write(6,*) 'Sponge layer divergence damping coefficent:'
 
                                                      call timing_on('d_sw')
+         if( is_master() ) write(*,*) ' dyn_core: before d_sw '
 !$OMP parallel do default(none) shared(npz,flagstruct,nord_v,pfull,damp_vt,hydrostatic,last_step, &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
@@ -898,6 +907,7 @@ contains
             enddo
        endif
     enddo           ! end openMP k-loop
+         if( is_master() ) write(*,*) ' dyn_core: after d_sw '
 
     if (flagstruct%regional) then
        call exch_uv(domain, bd, npz, vc, uc)
@@ -937,6 +947,7 @@ contains
         divg2(:,:) = 0.
     endif
 
+         if( is_master() ) write(*,*) ' dyn_core: after divg2 '
                                        call timing_on('COMM_TOTAL')
      call complete_group_halo_update(i_pack(1), domain)
 #ifdef USE_COND
@@ -996,6 +1007,7 @@ contains
     endif
 
      if ( hydrostatic ) then
+         if( is_master() ) write(*,*) ' dyn_core: before geopk 2 '
           call geopk(ptop, pe, peln, delp, pkc, gz, phis, pt,  &
 #ifdef MULTI_GASES
                      kapad,   &
@@ -1020,6 +1032,7 @@ contains
         endif
                                                          call timing_on('Riem_Solver')
 
+         if( is_master() ) write(*,*) ' dyn_core: before riem_solver3 '
         call Riem_Solver3(flagstruct%m_split, dt,  is,  ie,   js,   je, npz, ng,     &
                          isd, ied, jsd, jed, &
                          akap, cappa, cp,  &
@@ -1114,6 +1127,7 @@ contains
       endif
 #endif
 
+         if( is_master() ) write(*,*) ' dyn_core: before com p grad '
 !----------------------------
 ! Compute pressure gradient:
 !----------------------------
@@ -1218,6 +1232,7 @@ contains
                                                      call timing_off('COMM_TOTAL')
 
 #ifdef SW_DYNAMICS
+         if( is_master() ) write(*,*) ' dyn_core: check point 1 '
     endif
 #endif
       if ( gridstruct%nested ) then
@@ -1226,6 +1241,7 @@ contains
 
 #ifdef SW_DYNAMICS
 #else
+         if( is_master() ) write(*,*) ' dyn_core: check point 2 '
     if ( hydrostatic .and. last_step ) then
       if ( flagstruct%use_old_omega ) then
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,omga,pe,pem,rdt)
@@ -1239,6 +1255,7 @@ contains
 !------------------------------
 ! Compute the "advective term"
 !------------------------------
+         if( is_master() ) write(*,*) ' dyn_core: before adv_pe '
          call adv_pe(ua, va, pem, omga, gridstruct, bd, npx, npy,  npz, ng)
       else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,omga) private(om2d)
@@ -1321,6 +1338,7 @@ contains
 
 !-----------------------------------------------------
   enddo   ! time split loop
+         if( is_master() ) write(*,*) ' dyn_core: end time split loop '
   first_call=.false.
 !-----------------------------------------------------
     if ( nq > 0 .and. .not. flagstruct%inline_q ) then
@@ -1389,6 +1407,7 @@ contains
     endif
 
   endif
+         if( is_master() ) write(*,*) ' dyn_core: end pt '
   if (allocated(heat_source)) deallocate( heat_source ) !If ncon == 0 but d_con > 1.e-5, this would not be deallocated in earlier versions of the code
 
   if ( end_step ) then
@@ -1414,6 +1433,7 @@ contains
   endif
   if( allocated(pem) )   deallocate ( pem )
 
+         if( is_master() ) write(*,*) ' dyn_core: end '
 end subroutine dyn_core
 
 subroutine pk3_halo(is, ie, js, je, isd, ied, jsd, jed, npz, ptop, akap, pk3, delp)
@@ -2325,13 +2345,13 @@ do 1000 j=jfirst,jlast
 #endif
       enddo
 
-#ifndef SW_DYNAMICS
+!#ifndef SW_DYNAMICS
       if( j>=js .and. j<=je) then
          do i=is,ie
             peln(i,1,j) = peln1
          enddo
       endif
-#endif
+!#endif
 
       if( j>(js-2) .and. j<(je+2) ) then
          do i=max(ifirst,is-1), min(ilast,ie+1) 
@@ -2402,6 +2422,7 @@ do 1000 j=jfirst,jlast
       enddo
 
       if ( .not. CG .and. j .ge. js .and. j .le. je ) then
+         if( is_master() ) write(*,*) 'geopk: km=',km
          do k=1,km
             do i=is,ie
                pkz(i,j,k) = (pk(i,j,k+1)-pk(i,j,k))/(akap*(peln(i,k+1,j)-peln(i,k,j)))

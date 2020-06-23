@@ -407,6 +407,7 @@ module fv_control_mod
       ntilesMe = size(Atm(:)) !Full number of Atm arrays; one less than number of grids, if multiple grids
 
       call run_setup(Atm,dt_atmos, grids_on_this_pe, p_split)   ! initializes domain_decomp
+      if( is_master() ) write(*,*) ' fv_init: after run_setup '
 
       do n=1,ntilesMe
 
@@ -579,6 +580,7 @@ module fv_control_mod
       
     ! Initialize restart functions
       call fv_restart_init()
+      if( is_master() ) write(*,*) ' fv_init: after fv_restart+init '
 
 !     if ( reset_eta ) then
 !         do n=1, ntilesMe
@@ -682,6 +684,8 @@ module fv_control_mod
 #endif
 
 
+      if( is_master() ) write(*,*) ' run_setup: enter '
+
    pe_counter = mpp_root_pe()
 
 ! Make alpha = 0 the default:
@@ -741,6 +745,7 @@ module fv_control_mod
    ! Read Test_Case namelist
       read (input_nml_file,test_case_nml,iostat=ios)
       ierr = check_nml_error(ios,'test_case_nml')
+      if( is_master() ) write(*,*) ' run_setup: 1 test_case=',test_case
 
    ! Reset input_file_nml to default behavior
       call read_input_nml
@@ -1054,6 +1059,7 @@ module fv_control_mod
          call mpp_set_current_pelist(Atm(n)%pelist)
       endif
    enddo
+      if( is_master() ) write(*,*) ' run_setup: end test_case= ',test_case
 
   end subroutine run_setup
   subroutine init_nesting(Atm, grids_on_this_pe, p_split)

@@ -2154,6 +2154,7 @@ contains
 !***  Fill the total condensate in the regional boundary array.
 !-----------------------------------------------------------------------
 !
+#ifndef SW_DYNAMICS
 #ifdef USE_COND
       call fill_q_con_BC
 #endif
@@ -2164,6 +2165,7 @@ contains
 !
 #ifdef MOIST_CAPPA
       call fill_cappa_BC
+#endif
 #endif
 !
 !-----------------------------------------------------------------------
@@ -2232,9 +2234,11 @@ contains
         do j=js_input,je_input
         do i=is_input,ie_input
           BC_t1%north%delp_BC(i,j,k)=delp_input(i,j,k)
+#ifndef SW_DYNAMICS
           BC_t1%north%pt_BC(i,j,k)=t_input(i,j,k)
           BC_t1%north%w_BC(i,j,k)=w_input(i,j,k)
           BC_t1%north%delz_BC(i,j,k)=delz_input(i,j,k)
+#endif
         enddo
         enddo
         enddo
@@ -2293,9 +2297,11 @@ contains
         do j=js_input,je_input
         do i=is_input,ie_input
           BC_t1%south%delp_BC(i,j,k)=delp_input(i,j,k)
+#ifndef SW_DYNAMICS
           BC_t1%south%pt_BC(i,j,k)=t_input(i,j,k)
           BC_t1%south%w_BC(i,j,k)=w_input(i,j,k)
           BC_t1%south%delz_BC(i,j,k)=delz_input(i,j,k)
+#endif
         enddo
         enddo
         enddo
@@ -2354,9 +2360,11 @@ contains
         do j=js_input,je_input
         do i=is_input,ie_input
           BC_t1%east%delp_BC(i,j,k)=delp_input(i,j,k)
+#ifndef SW_DYNAMICS
           BC_t1%east%pt_BC(i,j,k)=t_input(i,j,k)
           BC_t1%east%w_BC(i,j,k)=w_input(i,j,k)
           BC_t1%east%delz_BC(i,j,k)=delz_input(i,j,k)
+#endif
         enddo
         enddo
         enddo
@@ -2415,9 +2423,11 @@ contains
         do j=js_input,je_input
         do i=is_input,ie_input
           BC_t1%west%delp_BC(i,j,k)=delp_input(i,j,k)
+#ifndef SW_DYNAMICS
           BC_t1%west%pt_BC(i,j,k)=t_input(i,j,k)
           BC_t1%west%w_BC(i,j,k)=w_input(i,j,k)
           BC_t1%west%delz_BC(i,j,k)=delz_input(i,j,k)
+#endif
         enddo
         enddo
         enddo
@@ -2562,6 +2572,7 @@ contains
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !-----------------------------------------------------------------------
 !
+#ifndef SW_DYNAMICS
 #ifdef USE_COND
       subroutine fill_q_con_BC
 !
@@ -2651,11 +2662,13 @@ contains
 !
       end subroutine fill_q_con_BC
 #endif
+#endif
 !
 !-----------------------------------------------------------------------
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !-----------------------------------------------------------------------
 !
+#ifndef SW_DYNAMICS
 #ifdef MOIST_CAPPA
       subroutine fill_cappa_BC
 !
@@ -2792,6 +2805,7 @@ contains
 !-----------------------------------------------------------------------
 !
       end subroutine compute_cappa
+#endif
 #endif
 !
 !-----------------------------------------------------------------------
@@ -3455,6 +3469,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !xxx  enddo
 
 ! Compute true temperature using hydrostatic balance if not read from input.
+#ifndef SW_DYNAMICS
 
         if (data_source /= 'FV3GFS GAUSSIAN NEMSIO FILE') then
           do k=1,npz
@@ -3468,7 +3483,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             BC_side%delz_BC(i,j,k) = (gz_fv(k+1) - gz_fv(k)) / grav
           enddo
         endif
-
+#endif
       enddo i_loop
 
 !-----------------------------------------------------------------------
@@ -3490,6 +3505,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             BC_side%q_BC(i,j,k,rainwat) = 0.
             BC_side%q_BC(i,j,k,snowwat) = 0.
             BC_side%q_BC(i,j,k,graupel) = 0.
+#ifndef SW_DYNAMICS
             if ( BC_side%pt_BC(i,j,k) > 273.16 ) then       ! > 0C all liq_wat
                BC_side%q_BC(i,j,k,liq_wat) = qn1(i,k)
                BC_side%q_BC(i,j,k,ice_wat) = 0.
@@ -3520,6 +3536,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                endif
             endif
 #endif
+#endif
             call mp_auto_conversion(BC_side%q_BC(i,j,k,liq_wat), BC_side%q_BC(i,j,k,rainwat),  &
                                     BC_side%q_BC(i,j,k,ice_wat), BC_side%q_BC(i,j,k,snowwat) )
          enddo
@@ -3541,6 +3558,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       enddo
 
       call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
+#ifndef SW_DYNAMICS
+
 
       if (data_source == 'FV3GFS GAUSSIAN NEMSIO FILE') then
         do k=1,npz
@@ -3572,6 +3591,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           enddo
         enddo
       endif
+#endif
 
    endif   !.not. Atm%flagstruct%hydrostatic
 
@@ -3760,8 +3780,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       real,dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz),intent(out) ::  &
                                                                 delp  &
+
                                                                ,pt 
 ! 
+
       real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: delz,w
 #ifdef USE_COND
       real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: q_con
@@ -3934,6 +3956,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           delp(i,j,k)=side_t0%delp_BC(i,j,k)                          &
                      +(side_t1%delp_BC(i,j,k)-side_t0%delp_BC(i,j,k)) &
                       *fraction_interval
+#ifndef SW_DYNAMICS
+
           pt(i,j,k)=side_t0%pt_BC(i,j,k)                              &
                      +(side_t1%pt_BC(i,j,k)-side_t0%pt_BC(i,j,k))     &
                       *fraction_interval
@@ -3953,6 +3977,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
           w(i,j,k)=side_t0%w_BC(i,j,k)                                  &
                      +(side_t1%w_BC(i,j,k)-side_t0%w_BC(i,j,k))         &
                       *fraction_interval
+#endif
         enddo
         enddo
 !
@@ -3979,8 +4004,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         enddo
       enddo
 !
+
+#ifndef SW_DYNAMICS
+
       ie=min(ubound(side_t0%delz_BC,1),ubound(delz,1))
       je=min(ubound(side_t0%delz_BC,2),ubound(delz,2))
+#endif
       nz=ubound(delz,3)
 !
       do nt=1,ntracers
@@ -4330,6 +4359,11 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         case ('delp')
           bc_t0=>bc_side_t0%delp_BC
           bc_t1=>bc_side_t1%delp_BC
+        case ('divgd')
+          bc_t0=>bc_side_t0%divgd_BC
+          bc_t1=>bc_side_t1%divgd_BC
+#ifndef SW_DYNAMICS
+
         case ('delz')
           bc_t0=>bc_side_t0%delz_BC
           bc_t1=>bc_side_t1%delz_BC
@@ -4339,9 +4373,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         case ('w')
           bc_t0=>bc_side_t0%w_BC
           bc_t1=>bc_side_t1%w_BC
-        case ('divgd')
-          bc_t0=>bc_side_t0%divgd_BC
-          bc_t1=>bc_side_t1%divgd_BC
 #ifdef MOIST_CAPPA
         case ('cappa')
           bc_t0=>bc_side_t0%cappa_BC
@@ -4351,6 +4382,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         case ('q_con')
           bc_t0=>bc_side_t0%q_con_BC
           bc_t1=>bc_side_t1%q_con_BC
+#endif
 #endif
         case ('q')
           if(iq<1)then
@@ -4830,6 +4862,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=regional_bounds%js_north
         j2=regional_bounds%je_north
         q    =>BC_t1%north%q_BC
+#ifndef SW_DYNAMICS
+
 #ifdef USE_COND
         q_con=>BC_t1%north%q_con_BC
 #endif
@@ -4840,6 +4874,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 #endif
         pt   =>BC_t1%north%pt_BC
         call compute_vpt             !<-- Compute the virtual potential temperature.
+#endif
       endif
 !
       if(south_bc)then
@@ -4848,6 +4883,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=regional_bounds%js_south
         j2=regional_bounds%je_south
         q    =>BC_t1%south%q_BC
+#ifndef SW_DYNAMICS
 #ifdef USE_COND
         q_con=>BC_t1%south%q_con_BC
 #endif
@@ -4858,6 +4894,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 #endif
         pt   =>BC_t1%south%pt_BC
         call compute_vpt             !<-- Compute the virtual potential temperature.
+#endif
       endif
 !
       if(east_bc)then
@@ -4866,6 +4903,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=regional_bounds%js_east
         j2=regional_bounds%je_east
         q    =>BC_t1%east%q_BC
+#ifndef SW_DYNAMICS
 #ifdef USE_COND
         q_con=>BC_t1%east%q_con_BC
 #endif
@@ -4876,6 +4914,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 #endif
         pt   =>BC_t1%east%pt_BC
         call compute_vpt             !<-- Compute the virtual potential temperature.
+#endif
       endif
 !
       if(west_bc)then
@@ -4884,6 +4923,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j1=regional_bounds%js_west
         j2=regional_bounds%je_west
         q    =>BC_t1%west%q_BC
+#ifndef SW_DYNAMICS
 #ifdef USE_COND
         q_con=>BC_t1%west%q_con_BC
 #endif
@@ -4894,6 +4934,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 #endif
         pt   =>BC_t1%west%pt_BC
         call compute_vpt             !<-- Compute the virtual potential temperature.
+#endif
       endif
 !
 !-----------------------------------------------------------------------
