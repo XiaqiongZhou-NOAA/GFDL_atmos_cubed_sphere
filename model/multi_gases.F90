@@ -135,26 +135,20 @@ module multi_gases_mod
         character(*), intent(IN) :: nml_filename
         integer, intent(IN) :: ncnst, nwat
         integer :: ierr, f_unit, unit, ios
-        real, allocatable :: rilist(:)
-        real, allocatable :: cpilist(:)
 
-        namelist /multi_gases_nml/ rilist,cpilist
-
+        namelist /multi_gases_nml/ ri,cpi
 
        unit = stdlog()
-
-       allocate (rilist(0:ncnst))
-       allocate (cpilist(0:ncnst))
 
        allocate (ri(0:ncnst))
        allocate (cpi(0:ncnst))
 
-       rilist     =    0.0
-       cpilist    =    0.0
-       rilist(0)  = rdgas
-       rilist(1)  = rvgas
-       cpilist(0) = cp_air
-       cpilist(1) = 4*cp_air
+       ri     =    0.0
+       cpi    =    0.0
+       ri(0)  = rdgas
+       ri(1)  = rvgas
+       cpi(0) = cp_air
+       cpi(1) = 4*cp_air
 #ifdef INTERNAL_FILE_NML
 
       ! Read multi_gases namelist
@@ -170,11 +164,8 @@ module multi_gases_mod
         ierr = check_nml_error(ios,'multi_gases_nml')
         call close_file(f_unit)
 #endif
-       ri =rilist
-       cpi = cpilist
       write(unit, nml=multi_gases_nml)
       call multi_gases_init(ncnst,nwat)
-      deallocate (rilist, cpilist)
 
       return
       end subroutine read_namelist_multi_gases_nml
