@@ -927,12 +927,12 @@ contains
      !--- generate dz using hydrostatic assumption
 #ifdef SW_DYNAMICS
      dz(isc:iec,jsc:jec,1) = (rdgas/grav)*Atm(mygrid)%pt(isc:iec,jsc:jec,1)  &
-                                 * (Atm(mytile)%peln(isc:iec,1,jsc:jec)          &
-                                 -  Atm(mytile)%peln(isc:iec,2,jsc:jec))
+                                 * (Atm(mygrid)%peln(isc:iec,1,jsc:jec)          &
+                                 -  Atm(mygrid)%peln(isc:iec,2,jsc:jec))
 #else    
      dz(isc:iec,jsc:jec,1:npz) = (rdgas/grav)*Atm(mygrid)%pt(isc:iec,jsc:jec,1:npz)  &
-                                 * (Atm(mytile)%peln(isc:iec,1:npz,jsc:jec)          &
-                                 -  Atm(mytile)%peln(isc:iec,2:npz+1,jsc:jec))
+                                 * (Atm(mygrid)%peln(isc:iec,1:npz,jsc:jec)          &
+                                 -  Atm(mygrid)%peln(isc:iec,2:npz+1,jsc:jec))
 #endif
    else
      !--- use non-hydrostatic delz directly
