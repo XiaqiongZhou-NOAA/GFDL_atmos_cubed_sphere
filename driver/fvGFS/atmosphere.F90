@@ -722,7 +722,7 @@ contains
    if (first_diag) then
       call timing_on('FV_DIAG')
       call fv_diag(Atm(mygrid:mygrid), zvir, fv_time, Atm(mygrid)%flagstruct%print_freq)
-      call fv_nggps_diag_init(Atm(mygrid:mygrid), Atm(mygrid)%atmos_axes, fv_time)
+!      call fv_nggps_diag_init(Atm(mygrid:mygrid), Atm(mygrid)%atmos_axes, fv_time)
       call fv_nggps_diag(Atm(mygrid:mygrid), zvir, fv_time)
       first_diag = .false.
       call timing_off('FV_DIAG')
