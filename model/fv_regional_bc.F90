@@ -1934,6 +1934,7 @@ contains
                                                ,bc_side_t1 )               !<-- BC vbls on final integration levels
 !
             call set_delp_and_tracers(bc_side_t1,Atm%npz,Atm%flagstruct%nwat)
+#ifndef SW_DYNAMICS
 !
            if(nside==1)then
               if(north_bc)then
@@ -2082,6 +2083,7 @@ contains
               endif
             endif
 
+#endif
         endif
 !
 !-----------------------------------------------------------------------

@@ -926,11 +926,11 @@ contains
    if (Atm(mygrid)%flagstruct%hydrostatic) then
      !--- generate dz using hydrostatic assumption
 #ifdef SW_DYNAMICS
-     dz(isc:iec,jsc:jec,1) = (rdgas/grav)*Atm(mygrid)%pt(isc:iec,jsc:jec,1)  &
+     dz(1:iec-isc+1,1:jec-jsc+1,1) = (rdgas/grav)*Atm(mygrid)%pt(isc:iec,jsc:jec,1)  &
                                  * (Atm(mygrid)%peln(isc:iec,1,jsc:jec)          &
                                  -  Atm(mygrid)%peln(isc:iec,2,jsc:jec))
 #else    
-     dz(isc:iec,jsc:jec,1:npz) = (rdgas/grav)*Atm(mygrid)%pt(isc:iec,jsc:jec,1:npz)  &
+     dz(1:iec-isc+1,jec-jsc+1,1:npz) = (rdgas/grav)*Atm(mygrid)%pt(isc:iec,jsc:jec,1:npz)  &
                                  * (Atm(mygrid)%peln(isc:iec,1:npz,jsc:jec)          &
                                  -  Atm(mygrid)%peln(isc:iec,2:npz+1,jsc:jec))
 #endif

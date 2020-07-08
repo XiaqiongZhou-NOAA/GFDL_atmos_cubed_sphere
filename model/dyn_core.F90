@@ -449,13 +449,17 @@ contains
                gz(i,j,npz+1) = zs(i,j)
             enddo
             enddo
+#ifndef SW_DYNAMICS
             if (gridstruct%nested) then
                call gz_bc(gz,neststruct%delz_BC,bd,npx,npy,npz,split_timestep_BC, real(n_split*flagstruct%k_split))
             endif
+#endif
             if (gridstruct%regional) then
                reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
                if (is_master() .and. flagstruct%fv_debug) print*, ' REG_BC_UPDATE_TIME: ', it, current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+#ifndef SW_DYNAMICS
                call gz_bc(gz, delz_regBC,bd,npx,npy,npz,mod(reg_bc_update_time,bc_time_interval*3600.), bc_time_interval*3600.)
+#endif
             endif
          else
 !$OMP parallel do default(none) shared(is,ie,js,je,gz,zs,npz)
@@ -602,13 +606,17 @@ contains
         else 
 
            if (gridstruct%bounded_domain) then
+#ifndef SW_DYNAMICS
               if (gridstruct%nested) then
                  call gz_bc(gz,neststruct%delz_BC,bd,npx,npy,npz,split_timestep_BC, real(n_split*flagstruct%k_split))
               endif
+#endif
               if (gridstruct%regional) then
                  reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
                  if (is_master() .and. flagstruct%fv_debug) print*, ' REG_BC_UPDATE_TIME: ', it, current_time_in_seconds+bdt*(n_map-1)+(it-1)*dt
+#ifndef SW_DYNAMICS
                  call gz_bc(gz, delz_regBC,bd,npx,npy,npz,mod(reg_bc_update_time,bc_time_interval*3600.), bc_time_interval*3600.)
+#endif
               endif
            endif
 
