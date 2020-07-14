@@ -936,9 +936,9 @@ contains
         dz(i-isc+1,j-jsc+1,1:npz) = (rdgas/grav)*Atm(mygrid)%pt(i,j,1:npz)  &
                                  * (Atm(mygrid)%peln(i,1:npz,j)          &
                                  -  Atm(mygrid)%peln(i,2:npz+1,j))
+#endif
        enddo
     enddo
-#endif
    else
      !--- use non-hydrostatic delz directly
    endif
