@@ -354,7 +354,6 @@ contains
     is1 = is-1;         ie3 = ie+2
                         ie1 = ie+1
  end if
-  mord = abs(iord)
 
  do 666 j=jfirst,jlast
 
