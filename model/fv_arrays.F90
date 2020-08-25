@@ -103,6 +103,9 @@ module fv_arrays_mod
      real, allocatable :: zxg(:,:)
      real, allocatable :: pt1(:)
 
+     integer :: id_prer, id_prei, id_pres, id_preg
+     integer :: id_qv_dt_gfdlmp, id_T_dt_gfdlmp
+     integer :: id_intqv, id_intql, id_intqi, id_intqr, id_intqs, id_intqg
 
      logical :: initialized = .false.
      real  sphum, liq_wat, ice_wat       ! GFDL physics
@@ -417,7 +420,8 @@ module fv_arrays_mod
 
 
    logical :: do_sat_adj= .false.   ! 
-   logical :: do_f3d = .false.   ! 
+   logical :: do_inline_mp = .false. ! inline cloud microphysics
+    logical :: do_f3d = .false.   ! 
    logical :: no_dycore = .false.   !< Disables execution of the dynamical core, only running
                                     !< the initialization, diagnostic, and I/O routines, and 
                                     !< any physics that may be enabled. Essentially turns the 
@@ -1118,6 +1122,17 @@ module fv_arrays_mod
      type(restart_file_type) :: BCfile_ne, BCfile_sw
 
   end type fv_nest_type
+ 
+  type inline_mp_type
+    real, _ALLOCATABLE :: prer(:,:)     _NULL
+    real, _ALLOCATABLE :: prei(:,:)     _NULL
+    real, _ALLOCATABLE :: pres(:,:)     _NULL
+    real, _ALLOCATABLE :: preg(:,:)     _NULL
+
+    real, _ALLOCATABLE :: qv_dt(:,:,:)
+    real, _ALLOCATABLE :: t_dt(:,:,:)
+  end type inline_mp_type
+
 
 !>@brief 'allocate_fv_nest_BC_type' is an interface to subroutines
 !! that allocate the 'fv_nest_BC_type' structure that holds the nested-grid BCs.
@@ -1312,6 +1327,9 @@ module fv_arrays_mod
  
   integer :: atmos_axes(4)
 
+     type(inline_mp_type) :: inline_mp
+
+
   end type fv_atmos_type
 
 contains
@@ -1486,6 +1504,11 @@ contains
     allocate (  Atm%ak(npz_2d+1) ) ; Atm%ak=real_snan
     allocate (  Atm%bk(npz_2d+1) ) ; Atm%bk=real_snan
 
+    allocate ( Atm%inline_mp%prer(is:ie,js:je) )
+    allocate ( Atm%inline_mp%prei(is:ie,js:je) )
+    allocate ( Atm%inline_mp%pres(is:ie,js:je) )
+    allocate ( Atm%inline_mp%preg(is:ie,js:je) )
+
     !--------------------------
     ! Non-hydrostatic dynamics:
     !--------------------------
@@ -1558,6 +1581,14 @@ contains
               Atm%qdiag(i,j,k,n) = real_big
            enddo
         enddo
+        enddo
+     enddo
+     do j=js, je
+        do i=is, ie
+           Atm%inline_mp%prer(i,j) = real_big
+           Atm%inline_mp%prei(i,j) = real_big
+           Atm%inline_mp%pres(i,j) = real_big
+           Atm%inline_mp%preg(i,j) = real_big
         enddo
      enddo
 #endif
@@ -1798,6 +1829,11 @@ contains
     deallocate (  Atm%cy )
     deallocate (  Atm%ak )
     deallocate (  Atm%bk )
+
+    deallocate ( Atm%inline_mp%prer )
+    deallocate ( Atm%inline_mp%prei )
+    deallocate ( Atm%inline_mp%pres )
+    deallocate ( Atm%inline_mp%preg )
 
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )

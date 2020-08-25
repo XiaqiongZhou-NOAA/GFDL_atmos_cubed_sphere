@@ -207,6 +207,7 @@ module fv_control_mod
    logical , pointer :: RF_fast
    logical , pointer :: consv_am
    logical , pointer :: do_sat_adj
+   logical , pointer :: do_inline_mp
    logical , pointer :: do_f3d
    logical , pointer :: no_dycore 
    logical , pointer :: convert_ke 
@@ -488,6 +489,11 @@ module fv_control_mod
             Atm(n)%ua = too_big
             Atm(n)%va = too_big
 
+            Atm(n)%inline_mp%prer = too_big
+            Atm(n)%inline_mp%prei = too_big
+            Atm(n)%inline_mp%pres = too_big
+            Atm(n)%inline_mp%preg = too_big
+
          else !this grid is NOT defined on this pe
 
             !Allocate dummy arrays
@@ -653,7 +659,7 @@ module fv_control_mod
    namelist /fv_core_nml/npx, npy, ntiles, npz, npz_rst, layout, io_layout, ncnst, nwat,  &
                          use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, do_schmidt,  &
                          hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-                         kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_f3d, &
+                         kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_inline_mp do_f3d, &
                          external_ic, read_increment, ncep_ic, nggps_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
                          external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
                          dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
@@ -1214,6 +1220,7 @@ module fv_control_mod
      RF_fast                       => Atm%flagstruct%RF_fast
      consv_am                      => Atm%flagstruct%consv_am
      do_sat_adj                    => Atm%flagstruct%do_sat_adj
+     do_inline_mp                  => Atm%flagstruct%do_inline_mp
      do_f3d                        => Atm%flagstruct%do_f3d
      no_dycore                     => Atm%flagstruct%no_dycore
      convert_ke                    => Atm%flagstruct%convert_ke

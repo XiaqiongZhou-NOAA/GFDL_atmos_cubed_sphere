@@ -144,7 +144,7 @@ module fv_dynamics_mod
    use fv_regional_mod,     only: a_step, p_step, k_step
    use fv_regional_mod,     only: current_time_in_seconds
    use boundary_mod,        only: nested_grid_BC_apply_intT
-   use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type
+   use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type, inline_mp_type
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
 #ifdef MULTI_GASES
    use multi_gases_mod,  only:  virq, virqd, vicpqd
@@ -177,7 +177,7 @@ contains
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
-                        parent_grid, domain, diss_est, time_total)
+                        parent_grid, domain, diss_est, inline_mp, time_total)
 
 #ifdef CCPP
     use mpp_mod,   only: FATAL, mpp_error
@@ -238,6 +238,8 @@ contains
 
     real, intent(inout), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: ua, va
     real, intent(in),    dimension(npz+1):: ak, bk
+
+    type(inline_mp_type), intent(inout) :: inline_mp
 
 ! Accumulated Mass flux arrays: the "Flux Capacitor"
     real, intent(inout) ::  mfx(bd%is:bd%ie+1, bd%js:bd%je,   npz)
@@ -634,6 +636,14 @@ contains
   endif
 #endif
 
+  ! Initialize rain, ice, snow and graupel precipitaiton
+  if (flagstruct%do_inline_mp) then
+      inline_mp%prer = 0.0
+      inline_mp%prei = 0.0
+      inline_mp%pres = 0.0
+      inline_mp%preg = 0.0
+  endif
+
                                                   call timing_on('FV_DYN_LOOP')
   do n_map=1, k_split   ! first level of time-split
       k_step = n_map
@@ -773,8 +783,10 @@ contains
                      kord_tracer, flagstruct%kord_tm, peln, te_2d,                      &
                      ng, ua, va, omga, dp1, ws, fill, reproduce_sum,                    &
                      idiag%id_mdt>0, dtdt_m, ptop, ak, bk, pfull, gridstruct, domain,   &
-                     flagstruct%do_sat_adj, hydrostatic, hybrid_z, do_omega,            &
-                     flagstruct%adiabatic, do_adiabatic_init)
+                     flagstruct%do_sat_adj, hydrostatic, hybrid_z, do_omega,     &
+                     flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
+                     inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
+                     flagstruct%moist_phys)
 
 #ifdef AVEC_TIMERS
                                                   call avec_timer_stop(6)
@@ -817,6 +829,15 @@ contains
       end if
 #endif
   enddo    ! n_map loop
+
+  ! Initialize rain, ice, snow and graupel precipitaiton
+  if (flagstruct%do_inline_mp) then
+      inline_mp%prer = inline_mp%prer / k_split
+      inline_mp%prei = inline_mp%prei / k_split
+      inline_mp%pres = inline_mp%pres / k_split
+      inline_mp%preg = inline_mp%preg / k_split
+  endif
+
                                                   call timing_off('FV_DYN_LOOP')
   if ( idiag%id_mdt > 0 .and. (.not.do_adiabatic_init) ) then
 ! Output temperature tendency due to inline moist physics:
