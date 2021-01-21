@@ -1906,6 +1906,7 @@ CONTAINS
 
  subroutine edge_profile_0grad(q1, q2, q1e, q2e, i1, i2, j1, j2, j, km, dp0, uniform_grid, limiter)
 ! Optimized for wind profile reconstruction:
+! Added this option by Henry Juang and Xiaqiong Zhou 1/21/2021
  integer, intent(in):: i1, i2, j1, j2
  integer, intent(in):: j, km
  integer, intent(in):: limiter
