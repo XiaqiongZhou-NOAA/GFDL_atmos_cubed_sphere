@@ -197,9 +197,9 @@ CONTAINS
 ! Enforce monotonicity of height to prevent blowup
 !$OMP parallel do default(none) shared(is1,ie1,js1,je1,ws,zs,gz,rdt,km,dz_min)
   do j=js1, je1
-     do k=2, km+1
+     do k=km, 1, -1 
         do i=is1, ie1
-           gz(i,j,k) = min( gz(i,j,k), gz(i,j,k-1) - dz_min )
+           gz(i,j,k) = max( gz(i,j,k), gz(i,j,k+1) + dz_min )
         enddo
      enddo
      do i=is1, ie1
@@ -323,10 +323,10 @@ CONTAINS
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,ws,zs,zh,rdt,dz_min)
   do j=js, je
-     do k=2, km+1
+     do k=km, 1, -1
         do i=is, ie
 ! Enforce monotonicity of height to prevent blowup
-           zh(i,j,k) = min( zh(i,j,k), zh(i,j,k-1) - dz_min )
+           zh(i,j,k) = max( zh(i,j,k), zh(i,j,k+1) + dz_min )
         enddo
      enddo
      do i=is,ie
