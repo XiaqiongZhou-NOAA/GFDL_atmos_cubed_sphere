@@ -370,7 +370,7 @@ contains
          case ( 1 )  ! Lat-Lon "cyclic"
 
             select case (grid_type)
-            case (0,1,2,5) !Gnomonic nested grid
+            case (0,1,2) !Gnomonic nested grid
                if (nested) then
                   type = "Cubed-sphere nested grid"
                else
@@ -530,8 +530,6 @@ contains
                tile1(2) = 1; tile2(2) = 1
                istart1(2) = 1;  iend1(2) = nx; jstart1(2) = 1;   jend1(2) = 1
                istart2(2) = 1;  iend2(2) = nx; jstart2(2) = ny;  jend2(2) = ny
-            case (5)   ! latlon patch
-
             case (6)   !latlon strip
                !--- Contact line 1, between tile 1 (EAST) and tile 1 (WEST)
                tile1(1) = 1; tile2(1) = 1
