@@ -758,7 +758,7 @@
 ! Make unit vectors for the coordinate extension:
 !-------------------------------------------------------------
   endif
- 
+
   do j=jsd,jed+1
      if ((j==1 .OR. j==npy) .and. .not. Atm%gridstruct%bounded_domain) then
         do i=isd,ied

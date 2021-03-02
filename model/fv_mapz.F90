@@ -1218,10 +1218,10 @@ endif        ! end last_step check
  integer, intent(in) :: km                !< Original vertical dimension
  integer, intent(in) :: kn                !< Target vertical dimension
  real, intent(in) ::   qs(i1:i2)       !< bottom BC
- real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges 
+ real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges
                                        !! (from model top to bottom surface)
                                        !! in the original vertical coordinate
- real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges 
+ real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges
                                        !! (from model top to bottom surface)
                                        !! in the new vertical coordinate
  real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) !< Field input
@@ -1311,10 +1311,10 @@ endif        ! end last_step check
  integer, intent(in) :: km                !< Original vertical dimension
  integer, intent(in) :: kn                !< Target vertical dimension
  real, intent(in) ::   qs(i1:i2)       !< bottom BC
- real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges 
+ real, intent(in) ::  pe1(i1:i2,km+1)  !< pressure at layer edges
                                        !! (from model top to bottom surface)
                                        !! in the original vertical coordinate
- real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges 
+ real, intent(in) ::  pe2(i1:i2,kn+1)  !< pressure at layer edges
                                        !! (from model top to bottom surface)
                                        !! in the new vertical coordinate
  real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) !< Field input
@@ -1399,10 +1399,10 @@ endif        ! end last_step check
       integer, intent(in):: j, nq, i1, i2
       integer, intent(in):: isd, ied, jsd, jed
       integer, intent(in):: kord(nq)
-      real, intent(in)::  pe1(i1:i2,km+1)     !< pressure at layer edges 
+      real, intent(in)::  pe1(i1:i2,km+1)     !< pressure at layer edges
                                               !! (from model top to bottom surface)
                                               !! in the original vertical coordinate
-      real, intent(in)::  pe2(i1:i2,km+1)     !< pressure at layer edges 
+      real, intent(in)::  pe2(i1:i2,km+1)     !< pressure at layer edges
                                               !! (from model top to bottom surface)
                                               !! in the new vertical coordinate
       real, intent(in)::  dp2(i1:i2,km)
@@ -1523,10 +1523,10 @@ endif        ! end last_step check
       integer, intent(in) :: km                !< Original vertical dimension
       integer, intent(in) :: kn                !< Target vertical dimension
 
-      real, intent(in) ::  pe1(i1:i2,km+1)     !< pressure at layer edges 
+      real, intent(in) ::  pe1(i1:i2,km+1)     !< pressure at layer edges
                                                !! (from model top to bottom surface)
                                                !! in the original vertical coordinate
-      real, intent(in) ::  pe2(i1:i2,kn+1)     !< pressure at layer edges 
+      real, intent(in) ::  pe2(i1:i2,kn+1)     !< pressure at layer edges
                                                !! (from model top to bottom surface)
                                                !! in the new vertical coordinate
       real, intent(in) ::  q1(ibeg:iend,jbeg:jend,km) ! Field input
@@ -2597,7 +2597,7 @@ endif        ! end last_step check
  integer, intent(in):: i2      !< Finishing longitude
  integer, intent(in):: km      !< vertical dimension
  integer, intent(in):: kord    !< Order (or more accurately method no.):
-                               !! 
+                               !!
  real , intent(in):: delp(i1:i2,km)     !< layer pressure thickness
 
 ! !INPUT/OUTPUT PARAMETERS:
