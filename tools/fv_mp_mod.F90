@@ -146,6 +146,9 @@
       public group_halo_update_type, grids_master_procs, tile_fine
       public global_nest_domain, MAX_NNEST, MAX_NTILE
 
+      !--- this should not be used, but included for UFS/GFS system for the time being
+      public commglobal
+
       interface start_group_halo_update
         module procedure start_var_group_update_2d
         module procedure start_var_group_update_3d

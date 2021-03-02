@@ -172,6 +172,9 @@ use GFS_typedefs,           only: IPD_data_type => GFS_data_type, kind_phys
 use IPD_typedefs,           only: IPD_data_type, kind_phys => IPD_kind_phys
 #endif
 use fv_iau_mod,             only: IAU_external_data_type
+#ifdef MULTI_GASES
+use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
+#endif
 
 !-----------------
 ! FV core modules:
@@ -191,14 +194,11 @@ use fv_sg_mod,          only: fv_subgrid_z
 use fv_update_phys_mod, only: fv_update_phys
 use fv_io_mod,          only: fv_io_register_nudge_restart
 use fv_nwp_nudge_mod,   only: fv_nwp_nudge_init, fv_nwp_nudge_end, do_adiabatic_init
-#ifdef MULTI_GASES
-use multi_gases_mod,  only: virq, virq_max, num_gas, ri, cpi
-#endif
 use fv_regional_mod,    only: start_regional_restart, read_new_bc_data, &
                               a_step, p_step, current_time_in_seconds
+use fv_grid_utils_mod,  only: g_sum
 
 use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
-use gfdl_mp_mod,        only: gfdl_mp_init, gfdl_mp_end
 use coarse_graining_mod, only: coarse_graining_init
 use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
 use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
@@ -236,7 +236,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
 
 !---- private data ----
   type (time_type) :: Time_step_atmos
-  public Atm
+  public Atm, mygrid
 
   !These are convenience variables for local use only, and are set to values in Atm%
   real    :: dt_atmos
@@ -263,7 +263,7 @@ character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
   real, parameter:: w0_big = 60.  ! to prevent negative w-tracer diffusion
 
 !---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
-  real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt
+  real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
   real, allocatable                     :: pref(:,:), dum1d(:)
 
   logical :: first_diag = .true.
@@ -325,14 +325,15 @@ contains
    if(Atm(mygrid)%flagstruct%warm_start) then
      a_step = nint(current_time_in_seconds/dt_atmos)
 
-   if (Atm(mygrid)%coarse_graining%write_coarse_restart_files .or. &
-        Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
-      call coarse_graining_init(Atm(mygrid)%flagstruct%npx, Atm(mygrid)%npz, &
-           Atm(mygrid)%layout, Atm(mygrid)%bd%is, Atm(mygrid)%bd%ie, &
-           Atm(mygrid)%bd%js, Atm(mygrid)%bd%je, Atm(mygrid)%coarse_graining%factor, &
-           Atm(mygrid)%coarse_graining%nx_coarse, &
-           Atm(mygrid)%coarse_graining%strategy, &
-           Atm(mygrid)%coarse_graining%domain)
+     if (Atm(mygrid)%coarse_graining%write_coarse_restart_files .or. &
+         Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
+           call coarse_graining_init(Atm(mygrid)%flagstruct%npx, Atm(mygrid)%npz, &
+                Atm(mygrid)%layout, Atm(mygrid)%bd%is, Atm(mygrid)%bd%ie, &
+                Atm(mygrid)%bd%js, Atm(mygrid)%bd%je, Atm(mygrid)%coarse_graining%factor, &
+                Atm(mygrid)%coarse_graining%nx_coarse, &
+                Atm(mygrid)%coarse_graining%strategy, &
+                Atm(mygrid)%coarse_graining%domain)
+     endif
    endif
 
 !----- write version and namelist to log file -----
@@ -606,7 +607,8 @@ contains
    type(time_type),intent(in) :: Time
    integer :: n, psc, atmos_time_step
    integer :: k, w_diff, nt_dyn, n_split_loc, seconds, days
-
+   logical :: used
+   real    :: rdt
    type(time_type) :: atmos_time
 
 !---- Call FV dynamics -----
@@ -679,6 +681,10 @@ contains
     call mpp_clock_begin (id_subgridz)
     u_dt(:,:,:)   = 0. ! These are updated by fv_subgrid_z
     v_dt(:,:,:)   = 0.
+! t_dt is used for two different purposes:
+!    1 - to calculate the diagnostic temperature tendency from fv_subgrid_z
+!    2 - as an accumulator for the IAU increment and physics tendency
+! because of this, it will need to be zeroed out after the diagnostic is calculated
     t_dt(:,:,:)   = Atm(n)%pt(isc:iec,jsc:jec,:)
     qv_dt(:,:,:)  = Atm(n)%q (isc:iec,jsc:jec,:,sphum)
 
@@ -725,6 +731,9 @@ contains
        qv_dt(:,:,:) = rdt*(Atm(1)%q(isc:iec,jsc:jec,:,sphum) - qv_dt(:,:,:))
        used = send_data(Atm(1)%idiag%id_qv_dt_sg, qv_dt, fv_time)
     end if
+
+! zero out t_dt for use as an accumulator
+    t_dt = 0.
 
    call mpp_clock_end (id_subgridz)
 
@@ -891,13 +900,17 @@ contains
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
+   logical, intent(out) :: nested
+   integer, pointer, intent(out) :: pelist(:)
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
 
    fv_domain = Atm(mygrid)%domain_for_coupler
    layout(1:2) =  Atm(mygrid)%layout(1:2)
-
    regional = Atm(mygrid)%flagstruct%regional
+   nested = ngrids > 1
+   call set_atmosphere_pelist()
+   pelist => Atm(mygrid)%pelist
 
  end subroutine atmosphere_domain
 
@@ -1642,7 +1655,8 @@ contains
                          .true., Time_next, Atm(n)%flagstruct%nudge, Atm(n)%gridstruct,    &
                          Atm(n)%gridstruct%agrid(:,:,1), Atm(n)%gridstruct%agrid(:,:,2),   &
                          Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct,            &
-                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop, Atm(n)%phys_diag)
+                         Atm(n)%neststruct, Atm(n)%bd, Atm(n)%domain, Atm(n)%ptop,         &
+                         Atm(n)%phys_diag, Atm(n)%nudge_diag )
        call timing_off('FV_UPDATE_PHYS')
    call mpp_clock_end (id_dynam)
 

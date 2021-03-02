@@ -301,7 +301,6 @@ contains
              new_nest_topo(n) = 1
              if (n==this_grid .or. this_grid==Atm(n)%parent_grid%grid_number) then
                 call fill_nested_grid_topo(Atm(n), n==this_grid)
-!RAB unknown
                 call fill_nested_grid_topo_halo(Atm(n), n==this_grid) !TODO can we combine these?
                 call nested_grid_BC(Atm(n)%ps, Atm(n)%parent_grid%ps, global_nest_domain, &
                      Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
@@ -316,7 +315,6 @@ contains
                 !Atm(n)%ps, Atm(n)%parent_grid%ps, global_nest_domain, &
                 !Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
                 !Atm(n)%npx, Atm(n)%npy, Atm(n)%bd, isd, ied, jsd, jed, proc_in=n==this_grid)
-!RAB unkown
              endif
 
           endif
@@ -1472,7 +1470,7 @@ contains
      if (Atm%coarse_graining%write_coarse_restart_files) &
           & call fv_io_write_restart_coarse(Atm)
      if (Atm%neststruct%nested) call fv_io_write_BCs(Atm)
-     if (Atm%flagstruct%write_restart_with_bcs .and. Atm%flagstruct%bounded_domain) &
+     if (Atm%flagstruct%write_restart_with_bcs .and. Atm%gridstruct%bounded_domain) &
           & call write_full_fields(Atm)
    endif
 

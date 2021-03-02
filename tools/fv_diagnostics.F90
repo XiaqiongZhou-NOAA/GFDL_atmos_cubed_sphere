@@ -141,7 +141,10 @@ module fv_diagnostics_mod
  use sat_vapor_pres_mod, only: compute_qs, lookup_es
 
  use fv_arrays_mod, only: max_step
+
+#ifndef GFS_PHYS
  use gfdl_cloud_microphys_mod, only: wqs1, qsmith_init, c_liq
+#endif
 
  use fv_diag_column_mod, only: fv_diag_column_init, sounding_column, debug_column
 
