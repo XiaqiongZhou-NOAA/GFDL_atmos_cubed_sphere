@@ -559,8 +559,11 @@ contains
                 pres = delp(i,j,k)/delz(i,j,k)*rdg*Tv
                 !if (pres < sounding_top) cycle
 
-                call qsmith(1, 1, 1, pt(i,j,k:k),   &
-                     (/pres/), q(i,j,k:k,sphum), qs)
+#ifdef MULTI_GASES
+                call qsmith(1, 1, 1, 1, pt(i,j,k:k), (/pres/), q(i,j,k:k,sphum), qs)
+#else
+                call qsmith(1, 1, 1, pt(i,j,k:k), (/pres/), q(i,j,k:k,sphum), qs)
+#endif
 
                 mixr = q(i,j,k,sphum)/(1.-sum(q(i,j,k,1:nwat))) ! convert from sphum to mixing ratio
                 rh = q(i,j,k,sphum)/qs(1)
