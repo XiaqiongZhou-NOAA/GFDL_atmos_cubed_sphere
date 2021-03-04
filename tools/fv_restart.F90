@@ -301,20 +301,6 @@ contains
              new_nest_topo(n) = 1
              if (n==this_grid .or. this_grid==Atm(n)%parent_grid%grid_number) then
                 call fill_nested_grid_topo(Atm(n), n==this_grid)
-                call fill_nested_grid_topo_halo(Atm(n), n==this_grid) !TODO can we combine these?
-                call nested_grid_BC(Atm(n)%ps, Atm(n)%parent_grid%ps, global_nest_domain, &
-                     Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
-                     Atm(n)%npx, Atm(n)%npy, Atm(n)%bd, 1, Atm(n)%npx-1, 1, Atm(n)%npy-1)
-
-             elseif (this_grid==Atm(n)%parent_grid%grid_number) then !this_grid is grid n's parent
-
-                call fill_nested_grid_topo(Atm(n), n==this_grid)
-                call fill_nested_grid_topo_halo(Atm(n), n==this_grid) !TODO can we combine these?
-                !call mpp_get_data_domain( Atm(n)%parent_grid%domain, isd, ied, jsd, jed)
-                call nested_grid_BC(Atm(n)%parent_grid%ps, global_nest_domain, 0, 0, n-1)
-                !Atm(n)%ps, Atm(n)%parent_grid%ps, global_nest_domain, &
-                !Atm(n)%neststruct%ind_h, Atm(n)%neststruct%wt_h, 0, 0, &
-                !Atm(n)%npx, Atm(n)%npy, Atm(n)%bd, isd, ied, jsd, jed, proc_in=n==this_grid)
              endif
 
           endif
