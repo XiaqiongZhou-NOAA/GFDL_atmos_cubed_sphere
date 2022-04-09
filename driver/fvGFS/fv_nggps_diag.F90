@@ -45,10 +45,6 @@ module fv_nggps_diags_mod
 !     <td>MODEL_ATMOS</td>
 !   </tr>
 !   <tr>
-!     <td>fms_io_mod</td>
-!     <td>set_domain, nullify_domain</td>
-!   </tr>
-!   <tr>
 !     <td>fv_arrays_mod</td>
 !     <td>fv_atmos_type</td>
 !   </tr>
@@ -68,7 +64,6 @@ module fv_nggps_diags_mod
 
  use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error
  use constants_mod,      only: grav, rdgas
- use fms_io_mod,         only: set_domain, nullify_domain
  use time_manager_mod,   only: time_type, get_time
  use diag_manager_mod,   only: register_diag_field, send_data
  use diag_axis_mod,      only: get_axis_global_length, get_diag_axis, get_diag_axis_name
@@ -123,9 +118,7 @@ module fv_nggps_diags_mod
  logical :: use_wrtgridcomp_output=.false.
  integer :: sphum, liq_wat, ice_wat       !< GFDL physics
  integer :: rainwat, snowwat, graupel
- real :: vrange(2) = (/ -330.,  330. /)  !< winds
- real :: wrange(2) = (/ -100.,  100. /)  !< vertical wind
- real :: trange(2) = (/  100.,  350. /)  !< temperature
+ real :: vrange(2), wrange(2), trange(2)
  real :: skrange(2) = (/ -10000000.0,  10000000.0 /)  !< dissipation estimate for SKEB
 
 ! file name
@@ -165,8 +158,6 @@ contains
     jsdo = Atm(n)%bd%jsd; jedo = Atm(n)%bd%jed
     hydrostatico = Atm(n)%flagstruct%hydrostatic
 
-    call set_domain(Atm(1)%domain)  ! Set domain so that diag_manager can access tile information
-
     sphum   = get_tracer_index (MODEL_ATMOS, 'sphum')
     liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
     ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
@@ -183,6 +174,20 @@ contains
     id_tracer(:) = 0
     kstt_tracer(:) = 0
     kend_tracer(:) = 0
+
+    if ( Atm(n)%flagstruct%molecular_diffusion ) then
+         vrange = (/ -830.,  830. /)  !< winds for wam
+         wrange = (/ -300.,  300. /)  !< vertical wind for wam
+         trange = (/  100., 3000. /)  !< temperature for wam
+    else
+         vrange = (/ -330.,  330. /)  !< winds
+         wrange = (/ -100.,  100. /)  !< vertical wind
+#ifdef MULTI_GASES
+         trange = (/  100., 3000. /)  !< temperature
+#else
+         trange = (/  100.,  350. /)  !< temperature
+#endif
+    endif
 
     if (Atm(n)%flagstruct%write_3d_diags) then
 !-------------------
@@ -584,7 +589,7 @@ contains
     endif
 #else
     !--- DELP
-    if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp)
+    if(id_delp > 0) call store_data(id_delp, Atm(n)%delp(isco:ieco,jsco:jeco,:), Time, kstt_delp, kend_delp)
 
     !--- Surface Pressure (PS)
     if( id_ps > 0) then
@@ -728,8 +733,6 @@ contains
     if ( .not.Atm(n)%flagstruct%hydrostatic .and. id_uhmin25 > 0) then
       call store_data(id_uhmin25, uhmin25, Time, kstt_uhmin25, kend_uhmin25)
     endif
-
-    call nullify_domain()
 
  end subroutine fv_nggps_diag
 
@@ -1000,6 +1003,7 @@ contains
        line=__LINE__, &
        file=__FILE__)) &
        return  ! bail out
+     deallocate(axis_name_vert)
    endif
 
    do id = 1,num_axes
@@ -1342,6 +1346,8 @@ contains
 !                    name="output_file", value=fld_outfilename, rc=rc)
 !     print *,'in dyn bundle setup, i=',i,' fieldname=',trim(fieldnamelist(i)),' out filename=',trim(fld_outfilename)
 !   enddo
+   deallocate(axis_name)
+   deallocate(all_axes)
 
  end subroutine fv_dyn_bundle_setup
 

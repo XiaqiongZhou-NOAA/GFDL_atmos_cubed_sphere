@@ -103,10 +103,9 @@ module fv_nwp_nudge_mod
  use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
  use constants_mod,     only: pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius
- use fms_mod,           only: write_version_number, open_namelist_file, &
-                              check_nml_error, file_exist, close_file
-!use fms_io_mod,        only: field_size
- use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit, mpp_pe
+ use fms_mod,           only: write_version_number, check_nml_error
+ use fms2_io_mod,       only: file_exists
+ use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit, mpp_pe, input_nml_file
  use mpp_domains_mod,   only: mpp_update_domains, domain2d
  use time_manager_mod,  only: time_type,  get_time, get_date
 
@@ -895,7 +894,7 @@ module fv_nwp_nudge_mod
     if ( kmax < km ) call mpp_error(FATAL,'==> KMAX must be larger than km')
 
     do j=js,je
-       do 666 i=is,ie
+       do i=is,ie
 #ifdef MULTI_GASES
        do k=1,km
           kappax(k)= virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))
@@ -932,6 +931,7 @@ module fv_nwp_nudge_mod
 #else
 666   ps_dt(i,j) = pst**(1./kappa) - ps(i,j)
 #endif
+      enddo   ! i-loop
       enddo   ! j-loop
 
       if( nf_ps>0 ) call del2_scalar(ps_dt, del2_cd, 1, nf_ps, bd, npx, npy, gridstruct, domain)
@@ -1380,14 +1380,9 @@ module fv_nwp_nudge_mod
 
    track_file_name = "No_File_specified"
 
-    if( file_exist( 'input.nml' ) ) then
-       unit = open_namelist_file ()
-       io = 1
-       do while ( io .ne. 0 )
-          read( unit, nml = fv_nwp_nudge_nml, iostat = io, end = 10 )
-          ierr = check_nml_error(io,'fv_nwp_nudge_nml')
-       end do
-10     call close_file ( unit )
+    if( file_exists( 'input.nml' ) ) then
+        read( input_nml_file, nml = fv_nwp_nudge_nml, iostat = io )
+        ierr = check_nml_error(io,'fv_nwp_nudge_nml')
     end if
     call write_version_number ( 'FV_NUDGE_MOD', version )
     if ( master ) then
@@ -1575,7 +1570,7 @@ module fv_nwp_nudge_mod
 #include <netcdf.inc>
 
 
-  if( .not. file_exist(fname) ) then
+  if( .not. file_exists(fname) ) then
      call mpp_error(FATAL,'==> Error from get_ncep_analysis: file not found: '//fname)
   else
      call open_ncfile( fname, ncid )        ! open the file

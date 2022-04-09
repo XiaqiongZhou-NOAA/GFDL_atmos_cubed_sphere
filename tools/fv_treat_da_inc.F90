@@ -79,8 +79,8 @@ module fv_treat_da_inc_mod
 !         get_latlon_vector, inner_prod, cubed_to_latlon</td>
 !   </tr>
 !   <tr>
-!     <td>fms_mod</td>
-!     <td>file_exist, read_data, field_exist, write_version_number</td>
+!     <td>fms2_io_mod</td>
+!     <td>file_exists
 !   </tr>
 !   <tr>
 !     <td>fv_mp_mod</td>
@@ -105,8 +105,7 @@ module fv_treat_da_inc_mod
 !   </tr>
 ! </table>
 
-  use fms_mod,           only: file_exist, read_data, &
-                               field_exist, write_version_number
+  use fms2_io_mod,       only: file_exists
   use mpp_mod,           only: mpp_error, FATAL, NOTE, mpp_pe
   use mpp_domains_mod,   only: mpp_get_tile_id, &
                                domain2d, &
@@ -198,7 +197,7 @@ contains
     integer :: isd, ied, jsd, jed
     integer :: sphum, liq_wat
 #ifdef MULTI_GASES
-    integer :: spfo, spfo2, spfo3
+    integer :: spo, spo2, spo3
 #else
     integer :: o3mr
 #endif
@@ -216,7 +215,7 @@ contains
 
     fname = 'INPUT/'//Atm%flagstruct%res_latlon_dynamics
 
-    if( file_exist(fname) ) then
+    if( file_exists(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
       call get_ncdim1( ncid, 'lon',   tsize(1) )
       call get_ncdim1( ncid, 'lat',   tsize(2) )
@@ -268,9 +267,9 @@ contains
 
     sphum   = get_tracer_index(MODEL_ATMOS, 'sphum')
 #ifdef MULTI_GASES
-    spfo3   = get_tracer_index(MODEL_ATMOS, 'spfo3')
-    spfo    = get_tracer_index(MODEL_ATMOS, 'spfo')
-    spfo2   = get_tracer_index(MODEL_ATMOS, 'spfo2')
+    spo3    = get_tracer_index(MODEL_ATMOS, 'spo3')
+    spo     = get_tracer_index(MODEL_ATMOS, 'spo')
+    spo2    = get_tracer_index(MODEL_ATMOS, 'spo2')
 #else
     o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
 #endif
@@ -288,9 +287,9 @@ contains
     call apply_inc_on_3d_scalar('sphum_inc',q(:,:,:,sphum), is_in, js_in, ie_in, je_in)
     call apply_inc_on_3d_scalar('liq_wat_inc',q(:,:,:,liq_wat), is_in, js_in, ie_in, je_in)
 #ifdef MULTI_GASES
-    call apply_inc_on_3d_scalar('spfo3_inc',q(:,:,:,spfo3), is_in, js_in, ie_in, je_in)
-    call apply_inc_on_3d_scalar('spfo_inc',q(:,:,:,spfo), is_in, js_in, ie_in, je_in)
-    call apply_inc_on_3d_scalar('spfo2_inc',q(:,:,:,spfo2), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('spo_inc',q(:,:,:,spo), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('spo2_inc',q(:,:,:,spo2), is_in, js_in, ie_in, je_in)
+    call apply_inc_on_3d_scalar('spo3_inc',q(:,:,:,spo3), is_in, js_in, ie_in, je_in)
 #else
     call apply_inc_on_3d_scalar('o3mr_inc',q(:,:,:,o3mr), is_in, js_in, ie_in, je_in)
 #endif

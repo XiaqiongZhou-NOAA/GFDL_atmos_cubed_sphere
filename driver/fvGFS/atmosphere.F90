@@ -44,11 +44,14 @@ module atmosphere_mod
 !   </tr>
 !   <tr>
 !     <td>fms_mod</td>
-!     <td>file_exist, open_namelist_file,close_file, error_mesg, FATAL,
-!         check_nml_error, stdlog,write_version_number,set_domain,
-!         mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT,
-!         clock_flag_default, nullify_domain</td>
+!     <td>file_exist, error_mesg, FATAL, check_nml_error,
+!         stdlog,write_version_number, mpp_clock_id,
+!         mpp_clock_begin, mpp_clock_end, CLOCK_SUBCOMPONENT,
+!         clock_flag_default</td>
 !   </tr>
+!   <tr>
+!     <td>fms2_io_mod</td>
+!     <td>file_exists</td>
 !   <tr>
 !     <td>fv_arrays_mod</td>
 !     <td>fv_atmos_type, R_GRID</td>
@@ -146,14 +149,13 @@ use block_control_mod,      only: block_control_type
 use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks
 use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
                                   operator(-), operator(/), time_type_to_real
-use fms_mod,                only: file_exist, open_namelist_file,    &
-                                  close_file, error_mesg, FATAL,     &
+use fms_mod,                only: error_mesg, FATAL,                 &
                                   check_nml_error, stdlog,           &
                                   write_version_number,              &
-                                  set_domain,   &
                                   mpp_clock_id, mpp_clock_begin,     &
                                   mpp_clock_end, CLOCK_SUBCOMPONENT, &
-                                  clock_flag_default, nullify_domain
+                                  clock_flag_default
+use fms2_io_mod,            only: file_exists
 use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
                                   input_nml_file, mpp_root_pe,    &
                                   mpp_npes, mpp_pe, mpp_chksum,   &
@@ -223,7 +225,8 @@ public :: atmosphere_resolution,   atmosphere_grid_bdry,         &
           atmosphere_get_bottom_layer, &
           atmosphere_nggps_diag,       &
           get_bottom_mass, get_bottom_wind,   &
-          get_stock_pe, set_atmosphere_pelist
+          get_stock_pe, set_atmosphere_pelist, &
+          get_nth_domain_info
 
 !--- physics/radiation data exchange routines
 public :: atmos_phys_driver_statein
@@ -334,7 +337,7 @@ contains
 
 !----- initialize FV dynamical core -----
    !NOTE do we still need the second file_exist call?
-   cold_start = (.not.file_exist('INPUT/fv_core.res.nc') .and. .not.file_exist('INPUT/fv_core.res.tile1.nc'))
+   cold_start = (.not.file_exists('INPUT/fv_core.res.nc') .and. .not.file_exists('INPUT/fv_core.res.tile1.nc'))
 
    call fv_control_init( Atm, dt_atmos, mygrid, grids_on_this_pe, p_split )  ! allocates Atm components; sets mygrid
 
@@ -392,7 +395,6 @@ contains
    ! Allocate grid variables to be used to calculate gradient in 2nd order flux exchange
    ! This data is only needed for the COARSEST grid.
    !call switch_current_Atm(Atm(mygrid))
-   call set_domain(Atm(mygrid)%domain)
 
    allocate(Grid_box%dx    (   isc:iec  , jsc:jec+1))
    allocate(Grid_box%dy    (   isc:iec+1, jsc:jec  ))
@@ -429,7 +431,7 @@ contains
 !--- allocate pref
    allocate(pref(npz+1,2), dum1d(npz+1))
 
-   call fv_restart(Atm(mygrid)%domain, Atm, dt_atmos, seconds, days, cold_start, Atm(mygrid)%gridstruct%grid_type, mygrid)
+   call fv_restart(Atm(mygrid)%domain, Atm, seconds, days, cold_start, Atm(mygrid)%gridstruct%grid_type, mygrid)
 
    fv_time = Time
 
@@ -442,12 +444,11 @@ contains
            Atm(mygrid)%atmos_axes(4), Atm(mygrid)%coarse_graining)
    endif
    if (Atm(mygrid)%coarse_graining%write_coarse_restart_files) then
-      call fv_coarse_restart_init(mygrid, Atm(mygrid)%npz, Atm(mygrid)%flagstruct%nt_prog, &
+      call fv_coarse_restart_init(Atm(mygrid)%npz, Atm(mygrid)%flagstruct%nt_prog, &
            Atm(mygrid)%flagstruct%nt_phys, Atm(mygrid)%flagstruct%hydrostatic, &
            Atm(mygrid)%flagstruct%hybrid_z, Atm(mygrid)%flagstruct%fv_land, &
            Atm(mygrid)%coarse_graining%write_coarse_dgrid_vel_rst, &
            Atm(mygrid)%coarse_graining%write_coarse_agrid_vel_rst, &
-           Atm(mygrid)%coarse_graining%domain, &
            Atm(mygrid)%coarse_graining%restart)
    endif
 
@@ -472,18 +473,8 @@ contains
    ! First, read atmos_model_nml namelist section - this is a workaround to avoid
    ! unnecessary additional changes to the input namelists, in anticipation of the
    ! implementation of a generic interface for GFDL and CCPP fast physics soon
-#ifdef INTERNAL_FILE_NML
    read(input_nml_file, nml=atmos_model_nml, iostat=io)
    ierr = check_nml_error(io, 'atmos_model_nml')
-#else
-   unit = open_namelist_file ( )
-   ierr=1
-   do while (ierr /= 0)
-      read  (unit, nml=atmos_model_nml, iostat=io, end=10)
-      ierr = check_nml_error(io,'atmos_model_nml')
-   enddo
-10 call close_file (unit)
-#endif
    !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
    ! *DH 20210326
 
@@ -537,7 +528,7 @@ contains
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mygrid)%gridstruct%regional .and. Atm(mygrid)%flagstruct%warm_start ) then
 
-     call start_regional_restart(Atm(1), dt_atmos,   &
+     call start_regional_restart(Atm(1),       &
                                  isc, iec, jsc, jec, &
                                  isd, ied, jsd, jed )
    endif
@@ -552,7 +543,6 @@ contains
 
 
    if ( Atm(mygrid)%flagstruct%na_init>0 ) then
-      call nullify_domain ( )
       if ( .not. Atm(mygrid)%flagstruct%hydrostatic ) then
            call prt_maxmin('Before adi: W', Atm(mygrid)%w, isc, iec, jsc, jec, Atm(mygrid)%ng, npz, 1.)
       endif
@@ -568,14 +558,11 @@ contains
    endif
 
 #ifdef DEBUG
-   call nullify_domain()
    call fv_diag(Atm(mygrid:mygrid), zvir, Time, -1)
    if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
       call fv_coarse_diag(Atm(mygrid:mygrid), fv_time)
    endif
 #endif
-
-   call set_domain(Atm(mygrid)%domain)
 
  end subroutine atmosphere_init
 
@@ -801,10 +788,8 @@ contains
    end if
 
   ! initialize domains for writing global physics data
-   call set_domain ( Atm(mygrid)%domain )
-
    if ( Atm(mygrid)%flagstruct%nudge ) call fv_nwp_nudge_end
-   call nullify_domain ( )
+
    if (first_diag) then
       call timing_on('FV_DIAG')
       call fv_diag(Atm(mygrid:mygrid), zvir, fv_time, Atm(mygrid)%flagstruct%print_freq)
@@ -930,15 +915,30 @@ contains
  end subroutine set_atmosphere_pelist
 
 
+ subroutine get_nth_domain_info(n, layout, nx, ny, pelist)
+   integer, intent(in)  :: n
+   integer, intent(out) :: layout(2)
+   integer, intent(out) :: nx, ny
+   integer, pointer, intent(out) :: pelist(:)
+
+   layout(1:2) = Atm(n)%layout(1:2)
+   nx = Atm(n)%npx -1
+   ny = Atm(n)%npy -1
+   pelist => Atm(n)%pelist
+
+ end subroutine get_nth_domain_info
+
 !>@brief The subroutine 'atmosphere_domain' is an API to return
 !! the "domain2d" variable associated with the coupling grid and the
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
- subroutine atmosphere_domain ( fv_domain, layout, regional, nested, pelist )
+ subroutine atmosphere_domain ( fv_domain, layout, regional, nested, ngrids_atmos, mygrid_atmos, pelist )
    type(domain2d), intent(out) :: fv_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
    logical, intent(out) :: nested
+   integer, intent(out) :: ngrids_atmos
+   integer, intent(out) :: mygrid_atmos
    integer, pointer, intent(out) :: pelist(:)
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
@@ -947,6 +947,8 @@ contains
    layout(1:2) =  Atm(mygrid)%layout(1:2)
    regional = Atm(mygrid)%flagstruct%regional
    nested = ngrids > 1
+   ngrids_atmos = ngrids
+   mygrid_atmos = mygrid
    call set_atmosphere_pelist()
    pelist => Atm(mygrid)%pelist
 
@@ -1545,8 +1547,6 @@ contains
       enddo
    endif
 
-   call set_domain ( Atm(mygrid)%domain )
-
    call timing_on('GFS_TENDENCIES')
    call atmos_phys_qdt_diag(Atm(n)%q, Atm(n)%phys_diag, nt_dyn, dt_atmos, .true.)
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
@@ -1714,7 +1714,6 @@ contains
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
     endif
-   call nullify_domain()
 
   !---- diagnostics for FV dynamics -----
    if (Atm(mygrid)%flagstruct%print_freq /= -99) then
@@ -1723,7 +1722,6 @@ contains
      fv_time = Time_next
      call get_time (fv_time, seconds,  days)
 
-     call nullify_domain()
      call timing_on('FV_DIAG')
      call fv_diag(Atm(mygrid:mygrid), zvir, fv_time, Atm(mygrid)%flagstruct%print_freq)
       if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
