@@ -139,7 +139,7 @@ module fv_dynamics_mod
    use fv_mp_mod,           only: start_group_halo_update, complete_group_halo_update
    use fv_timing_mod,       only: timing_on, timing_off
    use diag_manager_mod,    only: send_data
-   use fv_diagnostics_mod,  only: fv_time, prt_mxm, range_check, prt_minmax
+   use fv_diagnostics_mod,  only: fv_time, prt_mxm, range_check, prt_minmax, is_ideal_case   
    use mpp_domains_mod,     only: DGRID_NE, CGRID_NE, mpp_update_domains, domain2D
    use mpp_mod,             only: mpp_pe
    use field_manager_mod,   only: MODEL_ATMOS
@@ -169,9 +169,7 @@ implicit none
    integer :: k_rf = 0
 
    real :: agrav
-#ifdef HIWPP
    real, allocatable:: u00(:,:,:), v00(:,:,:)
-#endif
 private
 public :: fv_dynamics
 
@@ -541,7 +539,7 @@ contains
       endif
 
       if( .not.flagstruct%RF_fast .and. flagstruct%tau .ne. 0. ) then
-        if ( gridstruct%grid_type<4 .or. gridstruct%bounded_domain ) then
+        if ( gridstruct%grid_type<4 .or. gridstruct%bounded_domain .or. is_ideal_case) then         
 !         if ( flagstruct%RF_fast ) then
 !            call Ray_fast(abs(dt), npx, npy, npz, pfull, flagstruct%tau, u, v, w,  &
 !                          dp_ref, ptop, hydrostatic, flagstruct%rf_cutoff, bd)
@@ -551,7 +549,7 @@ contains
                   q, ncnst,  &
 #endif
                   ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic,    &
-                .not. gridstruct%bounded_domain, flagstruct%molecular_diffusion, consv_te, flagstruct%rf_cutoff, gridstruct, domain, bd)
+                .not. (gridstruct%bounded_domain .or. is_ideal_case), flagstruct%molecular_diffusion, consv_te, flagstruct%rf_cutoff, gridstruct, domain, bd)
 !         endif
         else
              call Rayleigh_Friction(abs(bdt), npx, npy, npz, ks, pfull, flagstruct%tau, u, v, w, pt,  &
@@ -1257,7 +1255,7 @@ contains
 
 
      if ( .not. RF_initialized ) then
-#ifdef HIWPP
+        if ( is_ideal_case )then
           allocate ( u00(is:ie,  js:je+1,npz) )
           allocate ( v00(is:ie+1,js:je  ,npz) )
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,u00,u,v00,v)
@@ -1273,7 +1271,7 @@ contains
                 enddo
              enddo
           enddo
-#endif
+        endif
 #ifdef SMALL_EARTH_TEST ! changed!!!
           tau0 = abs( tau )
           tau1 = abs( tau_w )
@@ -1332,9 +1330,7 @@ contains
                                         call timing_off('COMM_TOTAL')
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kmax,pm,rf_cutoff,w,rf,u,v, &
-#ifdef HIWPP
-!$OMP                                  u00,v00, &
-#endif
+!$OMP                                  u00,v00, is_ideal_case, &
 #ifdef MULTI_GASES
 !$OMP                                  q, &
 #endif

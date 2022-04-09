@@ -103,7 +103,8 @@ module dyn_core_mod
 !   </tr>
 ! </table>
 
-  use constants_mod,      only: rdgas, radius, cp_air, pi
+  use constants_mod,      only: rdgas, cp_air, pi
+  use fv_arrays_mod,      only: radius !scaled for small earth
   use mpp_mod,            only: mpp_pe
   use mpp_domains_mod,    only: CGRID_NE, DGRID_NE, mpp_get_boundary, mpp_update_domains,  &
                                 domain2d
@@ -118,7 +119,7 @@ module dyn_core_mod
   use nh_core_mod,        only: Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d, nh_bc
   use tp_core_mod,        only: copy_corners
   use fv_timing_mod,      only: timing_on, timing_off
-  use fv_diagnostics_mod, only: prt_maxmin, fv_time, prt_mxm
+  use fv_diagnostics_mod, only: prt_maxmin, fv_time, prt_mxm, is_ideal_case
   use fv_diag_column_mod, only: do_diag_debug_dyn, debug_column_dyn
 #ifdef ROT3
   use fv_update_phys_mod, only: update_dwinds_phys
@@ -770,7 +771,7 @@ contains
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
-!$OMP                                  heat_source,diss_est,ptop,first_call)                                      &
+!$OMP                                  heat_source,diss_est,ptop,first_call, is_ideal_case, radius)                                      &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
 !$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s,diss_e, z_rat)
     do k=1,npz
@@ -813,7 +814,12 @@ contains
 
               if ( k==1 ) then
 ! Divergence damping:
-                   nord_k=0; d2_divg = max(0.01, flagstruct%d2_bg, flagstruct%d2_bg_k1)
+                   nord_k=0;
+                   if ( is_ideal_case ) then
+                     d2_divg = max(flagstruct%d2_bg, flagstruct%d2_bg_k1)
+                   else
+                     d2_divg = max(0.01, flagstruct%d2_bg, flagstruct%d2_bg_k1)
+                   endif
 ! Vertical velocity:
                    nord_w=0; damp_w = d2_divg
                    if ( flagstruct%do_vort_damp ) then
