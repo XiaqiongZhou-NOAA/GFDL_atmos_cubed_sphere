@@ -786,7 +786,7 @@ contains
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
 !$OMP                                  heat_source,diss_est,ptop,first_call,is_ideal_case,radius, &
-!$OMP                                       upd_dt, vpd_dt, tp_dt, qp_dt)
+!$OMP                                       upd_dt, vpd_dt, tp_dt, qp_dt)                         &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
 !$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s,diss_e, z_rat)
     do k=1,npz
