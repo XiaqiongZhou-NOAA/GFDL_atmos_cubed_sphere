@@ -262,8 +262,9 @@ contains
     real, intent(inout) ::  cy(bd%isd:bd%ied ,bd%js:bd%je+1, npz)
 
 ! Arrays to put physics tendencies as forcing on RHS
-    real, dimension(:,:,:), intent(in) :: up_dt, vp_dt, tp_dt
-    real, dimension(:,:,:,:), intent(in) :: qp_dt
+    real, intent(in), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz) :: up_dt, vp_dt
+    real, intent(in), dimension(bd%is:bd%ie,bd%js:bd%je,npz) :: tp_dt
+    real, intent(in), dimension(bd%is:bd%ie,bd%js:bd%je,npz,nq_tot) :: qp_dt
 
     type(fv_grid_type),  intent(inout), target :: gridstruct
     type(fv_flags_type), intent(INOUT) :: flagstruct
@@ -715,7 +716,7 @@ contains
          if ( flagstruct%z_tracer ) then
             call tracer_2d_1L(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
                  flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &
-                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac)
+                 flagstruct%nord_tr, flagstruct%trdm2, flagstruct%lim_fac, flagstruct%phys_decenter, qp_dt)
          else
             call tracer_2d(q, dp1, mfx, mfy, cx, cy, gridstruct, bd, domain, npx, npy, npz, nq,    &
                  flagstruct%hord_tr, q_split, mdt, idiag%id_divg, i_pack(10), i_pack(13), &

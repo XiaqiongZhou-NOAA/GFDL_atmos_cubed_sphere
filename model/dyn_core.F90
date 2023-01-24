@@ -247,8 +247,9 @@ contains
     real, intent(inout)::  cy(bd%isd:bd%ied ,bd%js:bd%je+1, npz)
     real, intent(inout),dimension(bd%is:bd%ie,bd%js:bd%je,npz):: pkz
 
-    real, intent(in), dimension(bd%isd:bd%ied, bd%jsd:bd%jed, npz) :: upa_dt, vpa_dt, tp_dt
-    real, intent(in), dimension(bd%isd:bd%ied, bd%jsd:bd%jed, npz, nq) :: qp_dt
+    real, intent(in), dimension(bd%isd:bd%ied, bd%jsd:bd%jed, npz) :: upa_dt, vpa_dt
+    real, intent(in), dimension(bd%is:bd%ie, bd%js:bd%je, npz) :: tp_dt
+    real, intent(in), dimension(bd%is:bd%ie, bd%js:bd%je, npz, nq) :: qp_dt
 
     real, dimension(bd%isd:bd%ied+1, bd%jsd:bd%jed, npz) :: vpd_dt
     real, dimension(bd%isd:bd%ied, bd%jsd:bd%jed+1, npz) :: upd_dt
@@ -913,7 +914,7 @@ contains
                   flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
                   nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
                   damp_vt(k), damp_w, damp_t, d_con_k, hydrostatic, gridstruct, flagstruct, bd, &
-                  upd_dt(isd,jsd,k), vpd_dt(isd,jsd,k), tp_dt(isd,jsd,k), qp_dt)
+                  upd_dt(isd,jsd,k), vpd_dt(isd,jsd,k), tp_dt(is,js,k), qp_dt)
 
        if( hydrostatic .and. (.not.flagstruct%use_old_omega) .and. last_step ) then
 ! Average horizontal "convergence" to cell center

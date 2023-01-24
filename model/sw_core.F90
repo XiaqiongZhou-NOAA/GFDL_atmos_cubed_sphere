@@ -555,8 +555,8 @@
       real, intent(IN), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: upd_dt
       real, intent(IN), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: vpd_dt
       real, intent(INOUT):: q(bd%isd:bd%ied,bd%jsd:bd%jed,km,nq)
-      real, intent(IN):: tp_dt(bd%isd:bd%ied,bd%jsd:bd%jed)
-      real, intent(IN):: qp_dt(bd%isd:bd%ied,bd%jsd:bd%jed,km,nq)
+      real, intent(IN):: tp_dt(bd%is:bd%ie,bd%js:bd%je)
+      real, intent(IN):: qp_dt(bd%is:bd%ie,bd%js:bd%je,km,nq)
       real, intent(OUT),   dimension(bd%isd:bd%ied,  bd%jsd:bd%jed)  :: delpc, ptc
       real, intent(OUT),   dimension(bd%is:bd%ie,bd%js:bd%je):: heat_source
       real, intent(OUT),   dimension(bd%is:bd%ie,bd%js:bd%je):: diss_est
@@ -1051,7 +1051,7 @@
                          mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
            do j=js,je
               do i=is,ie
-                 q(i,j,k,iq) = ((q(i,j,k,iq)+(1.0-flagstruct%phys_decenter)*dt*qp_dt(i,j,k,iq))*wk(i,j) +               &
+                 q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
                          (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j))/delp(i,j)
               enddo
            enddo
@@ -1069,7 +1069,7 @@
            do i=is,ie
 #ifndef SW_DYNAMICS
               pt(i,j) = pt(i,j)*delp(i,j) +               &
-                         (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+                         (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j) + (1.0-flagstruct%phys_decenter)*dt*tp_dt(i,j)
 #endif
               delp(i,j) = delp(i,j) +                     &
                          (fx(i,j)-fx(i+1,j)+fy(i,j)-fy(i,j+1))*rarea(i,j)

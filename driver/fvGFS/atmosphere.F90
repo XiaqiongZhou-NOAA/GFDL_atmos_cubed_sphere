@@ -1665,9 +1665,11 @@ contains
          else
            q0 = IPD_Data(nb)%Statein%prsi(ix,k+1) - IPD_Data(nb)%Statein%prsi(ix,k)
          endif
-         qwat(1:nq_adv) = q0*(IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv) + Atm(n)%flagstruct%phys_decenter* &
+         qwat(1:nq_adv) = q0*(IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv) + &
                              (IPD_Data(nb)%Stateout%gq0(ix,k,1:nq_adv) - &
                               IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv)))
+                             !Atm(n)%flagstruct%phys_decenter*(IPD_Data(nb)%Stateout%gq0(ix,k,1:nq_adv) - &
+                             ! IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv)))
 ! **********************************************************************************************************
 ! Dry mass: the following way of updating delp is key to mass conservation with hybrid 32-64 bit computation
 ! **********************************************************************************************************
