@@ -1932,9 +1932,9 @@ contains
       real, allocatable:: wc(:,:,:)
       real(kind=4), allocatable:: uec(:,:,:), vec(:,:,:), tec(:,:,:), wec(:,:,:)
       real(kind=4), allocatable:: psec(:,:), zsec(:,:), zhec(:,:,:), qec(:,:,:,:)
-      real(kind=4), allocatable:: psc(:,:)
+      real(kind=4), allocatable:: psc(:,:),o3ec(:,:,:)
       real(kind=4), allocatable:: sphumec(:,:,:)
-      real, allocatable:: psc_r8(:,:), zhc(:,:,:), qc(:,:,:,:)
+      real, allocatable:: psc_r8(:,:), zhc(:,:,:), qc(:,:,:,:),o3c(:,:,:)
       real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
       real, allocatable:: pt_c(:,:,:), pt_d(:,:,:)
       real:: s2c(Atm%bd%is:Atm%bd%ie,Atm%bd%js:Atm%bd%je,4)
@@ -1955,21 +1955,17 @@ contains
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
       integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, sgs_tke, cld_amt
-#ifdef MULTI_GASES
-      integer :: spo, spo2, spo3
-#else
       integer :: o3mr
-#endif
       real:: wt, qt, m_fac
       real(kind=8) :: scale_value, offset, ptmp
       real(kind=R_GRID), dimension(2):: p1, p2, p3
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
       real, allocatable:: ps_gfs(:,:), zh_gfs(:,:,:)
-#ifdef MULTI_GASES
-      real, allocatable:: spo_gfs(:,:,:), spo2_gfs(:,:,:), spo3_gfs(:,:,:)
-#else
-      real, allocatable:: o3mr_gfs(:,:,:)
-#endif
+!#ifdef MULTI_GASES
+!      real, allocatable:: spo_gfs(:,:,:), spo2_gfs(:,:,:), spo3_gfs(:,:,:)
+!#else
+!      real, allocatable:: o3mr_gfs(:,:,:)
+!#endif
       real, allocatable:: ak_gfs(:), bk_gfs(:)
       integer :: id_res, ntprog, ntracers, ks, iq, nt
       character(len=64) :: tracer_name
@@ -2005,13 +2001,7 @@ contains
       snowwat = get_tracer_index(MODEL_ATMOS, 'snowwat')
       graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
       hailwat = get_tracer_index(MODEL_ATMOS, 'hailwat')
-#ifdef MULTI_GASES
-      spo     = get_tracer_index(MODEL_ATMOS, 'spo')
-      spo2    = get_tracer_index(MODEL_ATMOS, 'spo2')
-      spo3    = get_tracer_index(MODEL_ATMOS, 'spo3')
-#else
       o3mr    = get_tracer_index(MODEL_ATMOS, 'o3mr')
-#endif
       sgs_tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
       cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 
@@ -2027,13 +2017,7 @@ contains
             print *, 'hailwat = ', hailwat
            ENDIF
          endif
-#ifdef MULTI_GASES
-         print *, ' spo3 = ', spo3
-         print *, ' spo  = ', spo
-         print *, ' spo2 = ', spo2
-#else
          print *, ' o3mr = ', o3mr
-#endif
       endif
 
 
@@ -2075,81 +2059,81 @@ contains
       if(is_master()) write(*,*) 'done reading model terrain from oro_data.nc'
       call mpp_update_domains( Atm%phis, Atm%domain )
 
-!! Read in o3mr, ps and zh from GFS_data.tile?.nc
-#ifdef MULTI_GASES
-      allocate ( spo_gfs(is:ie,js:je,levp_gfs))
-      allocate (spo2_gfs(is:ie,js:je,levp_gfs))
-      allocate (spo3_gfs(is:ie,js:je,levp_gfs))
-#else
-      allocate (o3mr_gfs(is:ie,js:je,levp_gfs))
-#endif
-      allocate (ps_gfs(is:ie,js:je))
-      allocate (zh_gfs(is:ie,js:je,levp_gfs+1))
-
-      if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
-        call register_axis(GFS_restart, "lat", "y")
-        call register_axis(GFS_restart, "lon", "x")
-        call register_axis(GFS_restart, "levp", size(zh_gfs,3))
-#ifdef MULTI_GASES
-        call register_restart_field(GFS_restart, 'spo3', spo3_gfs, dim_names_3d3, is_optional=.true.)
-        call register_restart_field(GFS_restart, 'spo',  spo_gfs,  dim_names_3d3, is_optional=.true.)
-        call register_restart_field(GFS_restart, 'spo2', spo2_gfs, dim_names_3d3, is_optional=.true.)
-#else
-        call register_axis(GFS_restart, "lev", size(o3mr_gfs,3))
-        call register_restart_field(GFS_restart, 'o3mr', o3mr_gfs, dim_names_3d3, is_optional=.true.)
-#endif
-        call register_restart_field(GFS_restart, 'ps', ps_gfs, dim_names_2d)
-        call register_restart_field(GFS_restart, 'ZH', zh_gfs, dim_names_3d4)
-        call read_restart(GFS_restart)
-        call close_file(GFS_restart)
-      endif
-
-      ! Get GFS ak, bk for o3mr vertical interpolation
-      allocate (wk2(levp_gfs+1,2))
-      allocate (ak_gfs(levp_gfs+1))
-      allocate (bk_gfs(levp_gfs+1))
-      allocate(pes(mpp_npes()))
-      call mpp_get_current_pelist(pes)
-      if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes) ) then
-        call read_data(Gfs_ctl,'vcoord',wk2)
-        call close_file(Gfs_ctl)
-      endif
-      deallocate(pes)
-      ak_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,1)
-      bk_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,2)
-      deallocate (wk2)
-
-      if ( bk_gfs(1) < 1.E-9 ) ak_gfs(1) = max(1.e-9, ak_gfs(1))
-
-#ifdef MULTI_GASES
-      iq = spo
-      if(is_master()) write(*,*) 'Reading spo from GFS_data.nc:'
-      if(is_master()) write(*,*) 'spo =', iq
-      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo_gfs, zh_gfs, iq)
-      iq = spo2
-      if(is_master()) write(*,*) 'Reading spo2 from GFS_data.nc:'
-      if(is_master()) write(*,*) 'spo2 =', iq
-      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo2_gfs, zh_gfs, iq)
-      iq = spo3
-      if(is_master()) write(*,*) 'Reading spo3 from GFS_data.nc:'
-      if(is_master()) write(*,*) 'spo3 =', iq
-      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo3_gfs, zh_gfs, iq)
-#else
-      iq = o3mr
-      if(is_master()) write(*,*) 'Reading o3mr from GFS_data.nc:'
-      if(is_master()) write(*,*) 'o3mr =', iq
-      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, o3mr_gfs, zh_gfs, iq)
-#endif
-
-      deallocate (ak_gfs, bk_gfs)
-      deallocate (ps_gfs, zh_gfs)
-#ifdef MULTI_GASES
-      deallocate ( spo_gfs)
-      deallocate (spo2_gfs)
-      deallocate (spo3_gfs)
-#else
-      deallocate (o3mr_gfs)
-#endif
+!!! Read in o3mr, ps and zh from GFS_data.tile?.nc
+!!#ifdef MULTI_GASES
+!      allocate ( spo_gfs(is:ie,js:je,levp_gfs))
+!      allocate (spo2_gfs(is:ie,js:je,levp_gfs))
+!      allocate (spo3_gfs(is:ie,js:je,levp_gfs))
+!#else
+!      allocate (o3mr_gfs(is:ie,js:je,levp_gfs))
+!#endif
+!      allocate (ps_gfs(is:ie,js:je))
+!      allocate (zh_gfs(is:ie,js:je,levp_gfs+1))
+!
+!      if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+!        call register_axis(GFS_restart, "lat", "y")
+!        call register_axis(GFS_restart, "lon", "x")
+!        call register_axis(GFS_restart, "levp", size(zh_gfs,3))
+!#ifdef MULTI_GASES
+!        call register_restart_field(GFS_restart, 'spo3', spo3_gfs, dim_names_3d3, is_optional=.true.)
+!        call register_restart_field(GFS_restart, 'spo',  spo_gfs,  dim_names_3d3, is_optional=.true.)
+!        call register_restart_field(GFS_restart, 'spo2', spo2_gfs, dim_names_3d3, is_optional=.true.)
+!#else
+!        call register_axis(GFS_restart, "lev", size(o3mr_gfs,3))
+!        call register_restart_field(GFS_restart, 'o3mr', o3mr_gfs, dim_names_3d3, is_optional=.true.)
+!#endif
+!        call register_restart_field(GFS_restart, 'ps', ps_gfs, dim_names_2d)
+!        call register_restart_field(GFS_restart, 'ZH', zh_gfs, dim_names_3d4)
+!        call read_restart(GFS_restart)
+!        call close_file(GFS_restart)
+!      endif
+!
+!      ! Get GFS ak, bk for o3mr vertical interpolation
+!      allocate (wk2(levp_gfs+1,2))
+!      allocate (ak_gfs(levp_gfs+1))
+!      allocate (bk_gfs(levp_gfs+1))
+!      allocate(pes(mpp_npes()))
+!      call mpp_get_current_pelist(pes)
+!      if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes) ) then
+!        call read_data(Gfs_ctl,'vcoord',wk2)
+!        call close_file(Gfs_ctl)
+!      endif
+!      deallocate(pes)
+!      ak_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,1)
+!      bk_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,2)
+!      deallocate (wk2)
+!
+!      if ( bk_gfs(1) < 1.E-9 ) ak_gfs(1) = max(1.e-9, ak_gfs(1))
+!
+!#ifdef MULTI_GASES
+!      iq = spo
+!      if(is_master()) write(*,*) 'Reading spo from GFS_data.nc:'
+!      if(is_master()) write(*,*) 'spo =', iq
+!      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo_gfs, zh_gfs, iq)
+!      iq = spo2
+!      if(is_master()) write(*,*) 'Reading spo2 from GFS_data.nc:'
+!      if(is_master()) write(*,*) 'spo2 =', iq
+!      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo2_gfs, zh_gfs, iq)
+!      iq = spo3
+!      if(is_master()) write(*,*) 'Reading spo3 from GFS_data.nc:'
+!      if(is_master()) write(*,*) 'spo3 =', iq
+!      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, spo3_gfs, zh_gfs, iq)
+!#else
+!      iq = o3mr
+!      if(is_master()) write(*,*) 'Reading o3mr from GFS_data.nc:'
+!      if(is_master()) write(*,*) 'o3mr =', iq
+!      call remap_scalar_single(Atm, levp_gfs, npz, ak_gfs, bk_gfs, ps_gfs, o3mr_gfs, zh_gfs, iq)
+!#endif
+!
+!      deallocate (ak_gfs, bk_gfs)
+!      deallocate (ps_gfs, zh_gfs)
+!#ifdef MULTI_GASES
+!      deallocate ( spo_gfs)
+!      deallocate (spo2_gfs)
+!      deallocate (spo3_gfs)
+!#else
+!      deallocate (o3mr_gfs)
+!#endif
 
 !! Start to read EC data
       fname = Atm%flagstruct%res_latlon_dynamics
@@ -2251,6 +2235,16 @@ contains
       tec(:,:,:) = tec(:,:,:)*scale_value + offset
       if(is_master()) write(*,*) 'done reading tec'
 
+! read in o3:
+      allocate ( o3ec(1:im,jbeg:jend, 1:km) )
+
+      call get_var3_r4( ncid, 'o3', 1,im, jbeg,jend, 1,km, o3ec(:,:,:) )
+      call get_var_att_double ( ncid, 'o3', 'scale_factor', scale_value )
+      call get_var_att_double ( ncid, 'o3', 'add_offset', offset )
+      o3ec(:,:,:) = o3ec(:,:,:)*scale_value + offset
+      if(is_master()) write(*,*) 'done reading o3  ec'
+
+
 ! read in specific humidity:
       allocate ( sphumec(1:im,jbeg:jend, 1:km) )
 
@@ -2261,7 +2255,9 @@ contains
       if(is_master()) write(*,*) 'done reading sphum ec'
 
 ! Read in other tracers from EC data and remap them into cubic sphere grid:
-      allocate ( qec(1:im,jbeg:jend,1:km,5) )
+      allocate ( qec(1:im,jbeg:jend,1:km,o3mr) )
+      qec(:,:,:,o3mr)=o3ec(:,:,:)
+      deallocate ( o3ec )
 
       do n = 1, 5
         if (n == sphum) then
@@ -2302,7 +2298,7 @@ contains
       allocate ( zhec(1:im,jbeg:jend, km+1) )
       jn = jend - jbeg + 1
 
-      call compute_zh(im, jn, km, ak0, bk0, psec, zsec, tec, qec, 5, zhec )
+      call compute_zh(im, jn, km, ak0, bk0, psec, zsec, tec, qec, o3mr, zhec )
       if(is_master()) write(*,*) 'done compute zhec'
       deallocate ( zsec )
       deallocate ( tec )
@@ -2354,7 +2350,7 @@ contains
       if(is_master()) write(*,*) 'done interpolate psec/zhec into cubic grid psc/zhc!'
 
 ! Read in other tracers from EC data and remap them into cubic sphere grid:
-      allocate ( qc(is:ie,js:je,km,6) )
+      allocate ( qc(is:ie,js:je,km,o3mr) )
 
       do n = 1, 5
 !$OMP parallel do default(none) shared(n,is,ie,js,je,km,s2c,id1,id2,jdc,qc,qec) &
@@ -2371,8 +2367,21 @@ contains
           enddo
         enddo
       enddo
+!$OMP parallel do default(none) shared(n,is,ie,js,je,km,s2c,id1,id2,jdc,qc,qec,o3mr) &
+!$OMP               private(i1,i2,j1)
+        do k=1,km
+          do j=js,je
+            do i=is,ie
+               i1 = id1(i,j)
+               i2 = id2(i,j)
+               j1 = jdc(i,j)
+               qc(i,j,k,o3mr) = s2c(i,j,1)*qec(i1,j1  ,k,o3mr) + s2c(i,j,2)*qec(i2,j1  ,k,o3mr) +  &
+                             s2c(i,j,3)*qec(i2,j1+1,k,o3mr) + s2c(i,j,4)*qec(i1,j1+1,k,o3mr)
+            enddo
+          enddo
+        enddo
 
-      qc(:,:,:,graupel) = 0.   ! note Graupel must be tracer #6 (hail assumed not present,
+      qc(:,:,:,graupel:o3mr-1) = 0.   ! note Graupel must be tracer #6 (hail assumed not present,
                                ! otherwise qc needs have dimension 7)
 
       deallocate ( qec )
@@ -2410,7 +2419,7 @@ contains
       psc_r8(:,:) = psc(:,:)
       deallocate ( psc )
 
-      call remap_scalar(Atm, km, npz, 6, ak0, bk0, psc_r8, qc, zhc, wc)
+      call remap_scalar(Atm, km, npz, o3mr, ak0, bk0, psc_r8, qc, zhc, wc)
       call mpp_update_domains(Atm%phis, Atm%domain)
       if(is_master()) write(*,*) 'done remap_scalar'
 
