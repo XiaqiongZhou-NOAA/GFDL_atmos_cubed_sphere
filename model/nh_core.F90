@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -54,12 +54,13 @@ module nh_core_mod
    use nh_utils_mod,      only: update_dz_c, update_dz_d, nh_bc
    use nh_utils_mod,      only: sim_solver, sim1_solver, sim3_solver
    use nh_utils_mod,      only: sim3p0_solver, rim_2d
-   use nh_utils_mod,      only: Riem_Solver_c
+   use nh_utils_mod,      only: Riem_Solver_c, imp_diff_w
+   use nh_utils_mod,      only: edge_profile1
 
    implicit none
    private
 
-   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nh_bc
+   public Riem_Solver3, Riem_Solver_c, update_dz_c, update_dz_d, nh_bc, edge_profile1
    real, parameter:: r3 = 1./3.
 
 CONTAINS
@@ -72,7 +73,7 @@ CONTAINS
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
                           ws, scale_m,  p_fac, a_imp, &
-                          use_logp, last_call, fp_out, fast_tau_w_sec)
+                          use_logp, last_call, fp_out, d2bg_zq, debug, fast_tau_w_sec)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
 ! Ouput: gz: grav*height at edges
@@ -81,10 +82,10 @@ CONTAINS
 !--------------------------------------------
    integer, intent(in):: ms, is, ie, js, je, km, ng
    integer, intent(in):: isd, ied, jsd, jed
-   real, intent(in):: dt         !< the BIG horizontal Lagrangian time step
-   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m, fast_tau_w_sec
+   real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
+   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m, d2bg_zq, fast_tau_w_sec
    real, intent(in):: zs(isd:ied,jsd:jed)
-   logical, intent(in):: last_call, use_logp, fp_out
+   logical, intent(in):: last_call, use_logp, fp_out, debug
    real, intent(in):: ws(is:ie,js:je)
    real, intent(in), dimension(isd:,jsd:,1:):: q_con, cappa
 #ifdef MULTI_GASES
@@ -116,10 +117,10 @@ CONTAINS
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
 !$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
 #ifdef MULTI_GASES
-!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad,fast_tau_w_sec )          &
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad,d2bg_zq,debug,fast_tau_w_sec )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2,kapad2)
 #else
-!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,fast_tau_w_sec )     &
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,d2bg_zq,debug,fast_tau_w_sec )     &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
 #endif
    do 2000 j=js, je
@@ -217,6 +218,9 @@ CONTAINS
                            a_imp, p_fac, scale_m, fast_tau_w_sec)
       endif
 
+      if (d2bg_zq > 0.0001) then
+         call imp_diff_w(is, ie, km, d2bg_zq, dz2, ws(is,j), w2)
+      endif
 
       do k=1, km
          do i=is, ie

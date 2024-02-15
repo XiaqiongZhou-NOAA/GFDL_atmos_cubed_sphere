@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -53,15 +53,10 @@ module fv_iau_mod
                                  get_var1_double,     &
                                  get_var3_r4,         &
                                  get_var1_real, check_var_exists
-#ifdef GFS_TYPES
-  use GFS_typedefs,        only: IPD_init_type => GFS_init_type, &
-                                 IPD_control_type => GFS_control_type, &
-                                 kind_phys
-#else
+#ifdef GFS_PHYS
   use IPD_typedefs,        only: IPD_init_type, IPD_control_type, &
-                                 kind_phys => IPD_kind_phys
+                                 kind_phys
 #endif
-
   use block_control_mod,   only: block_control_type
   use fv_treat_da_inc_mod, only: remap_coef
   use tracer_manager_mod,  only: get_tracer_names,get_tracer_index, get_number_tracers
@@ -69,6 +64,10 @@ module fv_iau_mod
   implicit none
 
   private
+
+#ifndef GFS_PHYS
+    integer, parameter :: kind_phys = 8
+#endif
 
   real,allocatable::s2c(:,:,:)
 !  real:: s2c(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je,4)
@@ -111,7 +110,11 @@ module fv_iau_mod
       real(kind=kind_phys)        :: wt_normfact
   end type iau_state_type
   type(iau_state_type) :: IAU_state
-  public iau_external_data_type,IAU_initialize,getiauforcing
+
+  public iau_external_data_type
+
+#ifdef GFS_PHYS
+  public IAU_initialize, getiauforcing
 
 contains
 subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
@@ -237,7 +240,6 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
         agrid)
     deallocate ( lon, lat,agrid )
 
-
     allocate(IAU_Data%ua_inc(is:ie, js:je, km))
     allocate(IAU_Data%va_inc(is:ie, js:je, km))
     allocate(IAU_Data%temp_inc(is:ie, js:je, km))
@@ -251,6 +253,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     allocate (iau_state%inc1%delp_inc (is:ie, js:je, km))
     allocate (iau_state%inc1%delz_inc (is:ie, js:je, km))
     allocate (iau_state%inc1%tracer_inc(is:ie, js:je, km,ntracers))
+
     iau_state%hr1=IPD_Control%iaufhrs(1)
     iau_state%wt = 1.0 ! IAU increment filter weights (default 1.0)
     iau_state%wt_normfact = 1.0
@@ -278,6 +281,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     if (nfiles.EQ.1) then  ! only need to get incrments once since constant forcing over window
        call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
     endif
+
     if (nfiles.GT.1) then  !have multiple files, but only read in 2 at a time and interpoalte between them
        allocate (iau_state%inc2%ua_inc(is:ie, js:je, km))
        allocate (iau_state%inc2%va_inc(is:ie, js:je, km))
@@ -306,7 +310,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
        return
    endif
 
-   if (nfiles .eq. 1) then 
+   if (nfiles .eq. 1) then
        t1 = IPD_Control%iaufhrs(1)-0.5*IPD_Control%iau_delthrs
        t2 = IPD_Control%iaufhrs(1)+0.5*IPD_Control%iau_delthrs
    else
@@ -516,6 +520,8 @@ subroutine interp_inc(field_name,var,jbeg,jend)
     enddo
  enddo
 end subroutine interp_inc
+
+#endif
 
 end module fv_iau_mod
 

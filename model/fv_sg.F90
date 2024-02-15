@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -685,10 +685,8 @@ contains
          u_dt(i,j,k) = rdt*(u0(i,k) - ua(i,j,k))
          v_dt(i,j,k) = rdt*(v0(i,k) - va(i,j,k))
            ta(i,j,k) = t0(i,k)   ! *** temperature updated ***
-#ifdef GFS_PHYS
            ua(i,j,k) = u0(i,k)
            va(i,j,k) = v0(i,k)
-#endif
       enddo
       do iq=1,nq
          do i=is,ie
@@ -793,7 +791,7 @@ contains
 !$OMP parallel do default(none) shared(im,is,ie,js,je,nq,kbot,qa,ta,sphum,ua,va,delp,peln,     &
 !$OMP                                  hydrostatic,pe,delz,g2,w,liq_wat,rainwat,ice_wat,  &
 !$OMP                                  snowwat,cv_air,m,graupel,hailwat,pkz,rk,rz,fra,cld_amt,    &
-!$OMP                                  u_dt,rdt,v_dt,xvir,nwat)                 &
+!$OMP                                  u_dt,rdt,v_dt,xvir,nwat,sat_adj)                 &
 !$OMP                          private(kk,lcp2,icp2,tcp3,dh,dq,den,qs,qsw,dqsdt,qcon,q0, &
 !$OMP                                  t0,u0,v0,w0,h0,pm,gzh,tvm,tmp,cpm,cvm, q_liq,q_sol,&
 #ifdef MULTI_GASES
@@ -1310,7 +1308,7 @@ contains
 
 ! Prevent super saturation over water:
        do i=is, ie
-          qsw = wqs2(t0(i,k), den(i,k), dqsdt)
+          qsw = wqs(t0(i,k), den(i,k), dqsdt)
            dq = q0(i,k,sphum) - qsw
           if ( dq > 0. ) then   ! remove super-saturation
              tcp3 = lcp2(i) + icp2(i)*min(1., dim(tice,t0(i,k))/40.)
@@ -1334,17 +1332,12 @@ contains
        enddo
     enddo
   endif
-#endif
 
    do k=1,kbot
       do i=is,ie
          u_dt(i,j,k) = rdt*(u0(i,k) - ua(i,j,k))
          v_dt(i,j,k) = rdt*(v0(i,k) - va(i,j,k))
            ta(i,j,k) = t0(i,k)   ! *** temperature updated ***
-#ifdef GFS_PHYS
-           ua(i,j,k) = u0(i,k)
-           va(i,j,k) = v0(i,k)
-#endif
       enddo
       do iq=1,nq
          if (iq .ne. cld_amt ) then
@@ -1368,28 +1361,6 @@ contains
 
  end subroutine fv_subgrid_z
 #endif
-
-
-  subroutine qsmith_init
-  integer, parameter:: length=2621
-  integer i
-
-  if( .not. allocated(table) ) then
-!                            Generate es table (dT = 0.1 deg. C)
-
-       allocate ( table(length) )
-       allocate (  des (length) )
-
-       call qs_table(length, table)
-
-       do i=1,length-1
-          des(i) = table(i+1) - table(i)
-       enddo
-       des(length) = des(length-1)
-  endif
-
-  end subroutine qsmith_init
-
 
 #ifdef MULTI_GASES
   subroutine qsmith(im, km, imx, kmx, t, p, q, qs, dqdt)
@@ -1635,6 +1606,13 @@ contains
              p2(i,j) = dp2(i,j)/(peln(i,k+1,j)-peln(i,k,j))
              q_liq = max(0., ql2(i,j) + qr2(i,j))
              q_sol = max(0., qi2(i,j) + qs2(i,j))
+             cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cp_air + qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice
+             lcpk(i,j) = hlv / cpm
+             icpk(i,j) = hlf / cpm
+             lcpk(i,j) = hlv / cp_air
+             icpk(i,j) = hlf / cp_air
+             q_liq = max(0., ql2(i,j) + qr2(i,j))
+             q_sol = max(0., qi2(i,j) + qs2(i,j))
 #ifdef MULTI_GASES
              cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cp_air*vicpqd_qpz(qvi(i,j,k,1:num_gas),qv2(i,j)+q_liq+q_sol) + &
                                                         qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice
@@ -1779,7 +1757,7 @@ contains
         endif
 
 ! vapor <---> liquid water --------------------------------
-        qsw = wqsat2_moist(pt2(i,j), qv2(i,j), p2(i,j), dwsdt)
+        qsw = wqs(pt2(i,j), p2(i,j), qv2(i,j), dwsdt)
         sink = min( ql2(i,j), (qsw-qv2(i,j))/(1.+lcpk(i,j)*dwsdt) )
         qv2(i,j) = qv2(i,j) + sink
         ql2(i,j) = ql2(i,j) - sink
