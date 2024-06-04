@@ -820,22 +820,13 @@ contains
          endif
 #endif
 
-         if( last_step )  then
-            if( .not. hydrostatic ) then
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,omga,delp,delz,w)
-               do k=1,npz
-                  do j=js,je
-                     do i=is,ie
-                        omga(i,j,k) = delp(i,j,k)/delz(i,j,k)*w(i,j,k)
-                     enddo
-                  enddo
-               enddo
-            endif
 !--------------------------
 ! Filter omega for physics:
 !--------------------------
-            if(flagstruct%nf_omega>0)    &
-            call del2_cubed(omga, 0.18*gridstruct%da_min, gridstruct, domain, npx, npy, npz, flagstruct%nf_omega, bd)
+          if( last_step )  then
+            if(flagstruct%nf_omega>0) then   
+             call del2_cubed(omga, 0.18*gridstruct%da_min, gridstruct, domain, npx, npy, npz, flagstruct%nf_omega, bd)
+            endif
          endif
       end if
 #endif

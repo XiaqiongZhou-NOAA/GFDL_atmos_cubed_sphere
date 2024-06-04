@@ -508,7 +508,7 @@ contains
    enddo
 
 !----------------
-   if ( do_omega ) then
+   if ( last_step ) then
 ! Start do_omega
 ! Copy omega field to pe3
       do i=is,ie
@@ -588,7 +588,7 @@ contains
    endif
 
 ! Interpolate omega/pe3 (defined at pe0) to remapped cell center (dp2)
-   if ( do_omega ) then
+   if ( last_step ) then
    do k=1,km
       do i=is,ie
          dp2(i,k) = 0.5*(peln(i,k,j) + peln(i,k+1,j))
