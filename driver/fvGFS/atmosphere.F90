@@ -711,10 +711,10 @@ contains
 
     enddo !p_split
     if (.not. Atm(n)%flagstruct%hydrostatic .and. .not.  Atm(n)%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
-        Atm(n)%local_omga(isc:iec,jsc:jec,1:npz) = Atm(n)%delp(isc:iec,jsc:jec,1:npz) / Atm(n)%delz(isc:iec,jsc:jec,1:npz) * Atm(n)%w(isc:iec,jsc:jec,1:npz)
+        Atm(n)%omga(isc:iec,jsc:jec,1:npz) = Atm(n)%delp(isc:iec,jsc:jec,1:npz) / Atm(n)%delz(isc:iec,jsc:jec,1:npz) * Atm(n)%w(isc:iec,jsc:jec,1:npz)
         if(Atm(n)%flagstruct%nf_omega>0)   then
            call del2_cubed(&
-                Atm(n)%local_omga, &
+                Atm(n)%omga, &
                 0.18*Atm(n)%gridstruct%da_min, &
                 Atm(n)%gridstruct, &
                 Atm(n)%domain, &
@@ -2069,7 +2069,6 @@ contains
    real(kind=kind_phys) :: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
    integer :: nb, blen, npz, i, j, k, ix, k1, kz, dnats, nq_adv
-   real, pointer :: omega_for_physics(:,:,:)
 
 #ifdef MULTI_GASES
    real :: q_grs(nq), q_min
@@ -2087,12 +2086,6 @@ contains
    npz    = Atm_block%npz
    dnats = Atm(mygrid)%flagstruct%dnats
    nq_adv = nq - dnats
-   if (.not. Atm(mygrid)%flagstruct%hydrostatic .and. .not.  Atm(mygrid)%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
-      omega_for_physics => Atm(mygrid)%local_omga
-   else
-      omega_for_physics => Atm(mygrid)%omga
-   endif
-
 
 !---------------------------------------------------------------------
 ! use most up to date atmospheric properties when running serially
@@ -2100,7 +2093,7 @@ contains
 !$OMP parallel do default (none) &
 !$OMP             shared  (Atm_block, Atm, IPD_Data, npz, nq, ncnst, sphum, liq_wat, &
 !$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
-!$OMP                      pktop, zvir, mygrid, dnats, nq_adv, omega_for_physics, flip_vc) &
+!$OMP                      pktop, zvir, mygrid, dnats, nq_adv, flip_vc) &
 #ifdef MULTI_GASES
 
 !$OMP             private (dm, nb, blen, i, j, ix, k1, kz, rTv, qgrs_rad, q_min, q_grs)
@@ -2143,7 +2136,7 @@ contains
          if(associated(IPD_Data(nb)%Statein%wgrs) .and. .not. Atm(mygrid)%flagstruct%hydrostatic) then
            IPD_Data(nb)%Statein%wgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%w(i,j,k1)))
          endif
-         IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(_RL_(omega_for_physics(i,j,k1)))
+         IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(_RL_(Atm(mygrid)%omga(i,j,k1)))
          IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,k1)))   ! Total mass
          if (Atm(mygrid)%flagstruct%do_skeb)IPD_Data(nb)%Statein%diss_est(ix,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))
 

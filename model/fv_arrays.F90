@@ -1279,7 +1279,6 @@ module fv_arrays_mod
 !-----------------------------------------------------------------------
     real, _ALLOCATABLE :: phis(:,:)     _NULL  !< Surface geopotential (g*Z_surf)
     real, _ALLOCATABLE :: omga(:,:,:)   _NULL  !< Vertical pressure velocity (pa/s)
-    real, _ALLOCATABLE :: local_omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
     real, _ALLOCATABLE :: ua(:,:,:)     _NULL  !< (ua, va) are mostly used as the A grid winds
     real, _ALLOCATABLE :: va(:,:,:)     _NULL
     real, _ALLOCATABLE :: uc(:,:,:)     _NULL  !< (uc, vc) are mostly used as the C grid winds
@@ -1512,9 +1511,6 @@ contains
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.
-    if (.not. Atm%flagstruct%hydrostatic .and. .not.  Atm%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
-       allocate (Atm%local_omga(isd:ied,jsd:jed,npz)); Atm%local_omga = 0.
-    endif
 
     allocate (   Atm%ua(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
