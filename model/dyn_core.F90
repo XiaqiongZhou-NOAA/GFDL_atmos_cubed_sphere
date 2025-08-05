@@ -9,7 +9,7 @@
 !* Free Software Foundation, either version 3 of the License, or
 !* (at your option) any later version.
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !* You should have received a copy of the GNU Lesser General Public
@@ -26,9 +26,6 @@
 
 module dyn_core_mod
 
-  use constants_mod,      only: rdgas, radius, cp_air, pi
-  use constants_mod,      only: rdgas, cp_air, pi
-  use fv_arrays_mod,      only: radius ! scaled for small earth
 ! <table>
 ! <tr>
 !     <th>Module Name</th>
@@ -106,8 +103,7 @@ module dyn_core_mod
 !   </tr>
 ! </table>
 
-  use constants_mod,      only: rdgas, cp_air, pi
-  use fv_arrays_mod,      only: radius ! scaled for small earth
+  use constants_mod,      only: rdgas, radius, cp_air, pi
   use mpp_mod,            only: mpp_pe
   use mpp_domains_mod,    only: CGRID_NE, DGRID_NE, mpp_get_boundary, mpp_update_domains,  &
                                 domain2d
@@ -119,8 +115,8 @@ module dyn_core_mod
                           only: md_time, md_layers, md_consv_te, md_tadj_layers
   use sw_core_mod,        only: c_sw, d_sw, d_md
   use a2b_edge_mod,       only: a2b_ord2, a2b_ord4
-  use nh_core_mod,        only: Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d
-  use nh_core_mod,        only: nh_bc, edge_profile1
+  use nh_core_mod,        only: Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d, nh_bc
+  use nh_utils_mod,       only: edge_profile1 ! KGao: for dudz,dvdz,dwdz calculations
   use tp_core_mod,        only: copy_corners
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin, fv_time, prt_mxm
@@ -136,23 +132,24 @@ module dyn_core_mod
   use diag_manager_mod,   only: send_data
   use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, &
                                 fv_grid_bounds_type, R_GRID, fv_nest_BC_type_3d
+  use fv_arrays_mod,       only: sa3dtke_type ! for SA-3D-TKE (kyf) (modify for data structure)
 
   use boundary_mod,         only: extrapolation_BC,  nested_grid_BC_apply_intT
   use fv_regional_mod,      only: regional_boundary_update
   use fv_regional_mod,      only: current_time_in_seconds, bc_time_interval
   use fv_regional_mod,      only: delz_regBC ! TEMPORARY --- lmh
+!The following is for SA-3D-TKE
+   use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
+   use field_manager_mod,  only: MODEL_ATMOS
 
 #ifdef SW_DYNAMICS
   use test_cases_mod,      only: test_case, case9_forcing1, case9_forcing2
 #endif
-  use test_cases_mod,      only: w_forcing
-  use w_forcing_mod,       only: do_w_forcing
 #ifdef MULTI_GASES
     use multi_gases_mod,  only:  virqd, vicpqd, vicvqd, virq, vicvq
 #endif
   use fv_regional_mod,     only: dump_field, exch_uv, H_STAGGER, U_STAGGER, V_STAGGER
   use fv_regional_mod,     only: a_step, p_step, k_step, n_step
-  use fast_phys_mod,       only: fast_phys
 
 implicit none
 private
@@ -186,9 +183,12 @@ contains
 #endif
                      grav, hydrostatic,  &
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
-                     uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
+                     uc, vc,                                     &
+!The following variable is for SA-3D-TKE (kyf) (modify for data structure)
+                     sa3dtke_var,    &
+                     mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
-                     init_step, i_pack, end_step, consv, diss_est,time_total)
+                     init_step, i_pack, end_step, diss_est,time_total)
 
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
@@ -196,7 +196,7 @@ contains
     integer, intent(IN) :: ng, nq, sphum
     integer, intent(IN) :: n_map, n_split
     real   , intent(IN) :: bdt
-    real   , intent(IN) :: zvir, cp, akap, grav, consv
+    real   , intent(IN) :: zvir, cp, akap, grav
     real   , intent(IN) :: ptop
     logical, intent(IN) :: hydrostatic
     logical, intent(IN) :: init_step, end_step
@@ -243,8 +243,10 @@ contains
     real, intent(inout):: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)  !< (uc, vc) are mostly used as the C grid winds
     real, intent(inout):: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
     real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va
+!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
+    type(sa3dtke_type), intent(inout) :: sa3dtke_var
+
     real, intent(inout):: q_con(bd%isd:, bd%jsd:, 1:)
-    real, intent(inout):: te0_2d(bd%is:bd%ie,bd%js:bd%je)
 
 ! The Flux capacitors: accumulated Mass flux arrays
     real, intent(inout)::  mfx(bd%is:bd%ie+1, bd%js:bd%je,   npz)
@@ -296,6 +298,9 @@ contains
     logical :: last_step, remap_step
     logical used
     real :: split_timestep_bc
+
+!The following is for SA-3D-TKE
+    integer :: sgs_tke
 
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
@@ -376,7 +381,14 @@ contains
                allocate( dv(isd:ied+1,jsd:jed,  npz) )
                call init_ijk_mem(isd,ied+1, jsd,jed  , npz, dv, 0.)
           endif
-          call init_ijk_mem(isd,ied, jsd,jed, npz, diss_est, 0.)
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,diss_est)
+          do k=1,npz
+            do j=jsd,jed
+              do i=isd,ied
+                diss_est(i,j,k) = 0.
+              enddo
+            enddo
+          enddo
       endif    ! end init_step
 
 ! Empty the "flux capacitors"
@@ -385,7 +397,7 @@ contains
     call init_ijk_mem(is, ie+1, jsd, jed,  npz, cx, 0.)
     call init_ijk_mem(isd, ied, js,  je+1, npz, cy, 0.)
 
-    if ( flagstruct%d_con > 1.0E-5 ) then
+    if ( flagstruct%d_con > 1.0E-5 .OR. flagstruct%do_skeb) then
          allocate( heat_source(isd:ied, jsd:jed, npz) )
          call init_ijk_mem(isd, ied, jsd, jed, npz, heat_source, 0.)
     endif
@@ -430,20 +442,19 @@ contains
      endif
 
      if ( nq > 0 ) then
-         call timing_on('COMM_TOTAL')
-         call timing_on('COMM_TRACER')
+                                    call timing_on('COMM_TOTAL')
+                                        call timing_on('COMM_TRACER')
          if ( flagstruct%inline_q ) then
                       call start_group_halo_update(i_pack(10), q, domain)
          endif
-         call timing_off('COMM_TRACER')
-         call timing_off('COMM_TOTAL')
+                                       call timing_off('COMM_TRACER')
+                                   call timing_off('COMM_TOTAL')
      endif
 
-#ifndef SW_DYNAMICS
      if ( .not. hydrostatic ) then
-         call timing_on('COMM_TOTAL')
+                             call timing_on('COMM_TOTAL')
          call start_group_halo_update(i_pack(7), w, domain)
-         call timing_off('COMM_TOTAL')
+                             call timing_off('COMM_TOTAL')
 
       if ( it==1 ) then
          if (gridstruct%bounded_domain) then
@@ -478,24 +489,25 @@ contains
                enddo
             enddo
          enddo
-         call timing_on('COMM_TOTAL')
+                             call timing_on('COMM_TOTAL')
          call start_group_halo_update(i_pack(5), gz,  domain)
-         call timing_off('COMM_TOTAL')
+                             call timing_off('COMM_TOTAL')
       endif
 
-   endif
-#endif
+     endif
+
 
 #ifdef SW_DYNAMICS
      if (test_case>1) then
-     if (test_case==9) call case9_forcing1(phis, time_total, isd, ied, jsd, jed)
+#ifdef USE_OLD
+     if (test_case==9) call case9_forcing1(phis, time_total)
+#endif
 #endif
 
-
      if ( it==1 ) then
-          call timing_on('COMM_TOTAL')
+                                       call timing_on('COMM_TOTAL')
           call complete_group_halo_update(i_pack(1), domain)
-          call timing_off('COMM_TOTAL')
+                                      call timing_off('COMM_TOTAL')
           beta_d = 0.
      else
           beta_d = beta
@@ -521,13 +533,13 @@ contains
           last_step = .false.
      endif
 
-     call timing_on('COMM_TOTAL')
+                                                     call timing_on('COMM_TOTAL')
      call complete_group_halo_update(i_pack(8), domain)
      if( .not. hydrostatic )  &
           call complete_group_halo_update(i_pack(7), domain)
-     call timing_off('COMM_TOTAL')
+                                                     call timing_off('COMM_TOTAL')
 
-      call timing_on('C_SW')
+                                                     call timing_on('c_sw')
 !$OMP parallel do default(none) shared(npz,isd,jsd,delpc,delp,ptc,pt,u,v,w,uc,vc,ua,va, &
 !$OMP                                  omga,ut,vt,divgd,flagstruct,dt2,hydrostatic,bd,  &
 !$OMP                                  gridstruct)
@@ -540,11 +552,11 @@ contains
                       flagstruct%nord,   dt2,  hydrostatic,  .true., bd,  &
                       gridstruct, flagstruct)
       enddo
-      call timing_off('C_SW')
+                                                     call timing_off('c_sw')
       if ( flagstruct%nord > 0 ) then
-          call timing_on('COMM_TOTAL')
+                                                   call timing_on('COMM_TOTAL')
           call start_group_halo_update(i_pack(3), divgd, domain, position=CORNER)
-          call timing_off('COMM_TOTAL')
+                                                  call timing_off('COMM_TOTAL')
       endif
 
       if (gridstruct%nested) then
@@ -583,9 +595,9 @@ contains
 #ifndef SW_DYNAMICS
            if ( it == 1 ) then
 
-              call timing_on('COMM_TOTAL')
+                                      call timing_on('COMM_TOTAL')
               call complete_group_halo_update(i_pack(5), domain)
-              call timing_off('COMM_TOTAL')
+                                     call timing_off('COMM_TOTAL')
 
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,zh,gz)
            do k=1,npz+1
@@ -620,13 +632,13 @@ contains
            enddo
 
         endif
-         call timing_on('UPDATE_DZ_C')
+                                            call timing_on('UPDATE_DZ_C')
          call update_dz_c(is, ie, js, je, npz, ng, dt2, dp_ref, zs, gridstruct%area, ut, vt, gz, ws3, &
              npx, npy, gridstruct%sw_corner, gridstruct%se_corner, &
              gridstruct%ne_corner, gridstruct%nw_corner, bd, gridstruct%grid_type, flagstruct%dz_min)
-         call timing_off('UPDATE_DZ_C')
+                                            call timing_off('UPDATE_DZ_C')
 
-           call timing_on('Riem_Solver')
+                                               call timing_on('Riem_Solver')
            call Riem_Solver_C( ms, dt2,   is,  ie,   js,   je,   npz,   ng,   &
                                akap, cappa, cp,  &
 #ifdef MULTI_GASES
@@ -635,8 +647,8 @@ contains
                                ptop, phis, omga, ptc,  &
                                q_con,  delpc, gz,  pkc, ws3, flagstruct%p_fac, &
                                flagstruct%a_imp, flagstruct%scale_z, pfull, &
-                               flagstruct%fast_tau_w_sec, flagstruct%rf_cutoff )
-           call timing_off('Riem_Solver')
+                               flagstruct%fast_tau_w_sec, flagstruct%rf_cutoff_w )
+                                               call timing_off('Riem_Solver')
 
            if (gridstruct%nested) then
            call nh_bc(ptop, grav, akap, cp, delpc, neststruct%delz_BC, ptc, phis, &
@@ -679,26 +691,22 @@ contains
 
       call p_grad_c(dt2, npz, delpc, pkc, gz, uc, vc, bd, gridstruct%rdxc, gridstruct%rdyc, hydrostatic)
 
-      call timing_on('COMM_TOTAL')
+                                                                   call timing_on('COMM_TOTAL')
       call start_group_halo_update(i_pack(9), uc, vc, domain, gridtype=CGRID_NE)
-      call timing_off('COMM_TOTAL')
+                                                     call timing_off('COMM_TOTAL')
 #ifdef SW_DYNAMICS
-      if (test_case==9) call case9_forcing2(phis, isd, ied, jsd, jed)
+#ifdef USE_OLD
+      if (test_case==9) call case9_forcing2(phis)
+#endif
       endif !test_case>1
 #endif
 
-    call timing_on('COMM_TOTAL')
+                                                                   call timing_on('COMM_TOTAL')
     if (flagstruct%inline_q .and. nq>0) call complete_group_halo_update(i_pack(10), domain)
-#ifdef SW_DYNAMICS
-    if (test_case > 1) then
-#endif
-                        if (flagstruct%nord > 0) call complete_group_halo_update(i_pack(3), domain)
-                                                 call complete_group_halo_update(i_pack(9), domain)
-#ifdef SW_DYNAMICS
-    endif
-#endif
-    call timing_off('COMM_TOTAL')
+    if (flagstruct%nord > 0) call complete_group_halo_update(i_pack(3), domain)
+                             call complete_group_halo_update(i_pack(9), domain)
 
+                                                                   call timing_off('COMM_TOTAL')
       if (gridstruct%nested) then
          !On a nested grid we have to do SOMETHING with uc and vc in
          ! the boundary halo, particularly at the corners of the
@@ -771,15 +779,19 @@ contains
 
     endif
 
+!The following is modified for SA-3D-TKE
+!-- add sa3dtke_var in parallel calculation
+! replce dku3d_h by sa3dtke_var (kyf) (modify for data structure)
 
-    call timing_on('D_SW')
+                                                     call timing_on('d_sw')
 !$OMP parallel do default(none) shared(npz,flagstruct,nord_v,pfull,damp_vt,hydrostatic,last_step, &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
+!$OMP                                  sa3dtke_var,                                               &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
-!$OMP                                  heat_source,diss_est,ptop,first_call,radius)                                      &
+!$OMP                                  heat_source,diss_est,ptop,first_call)                      &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
-!$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s, diss_e, z_rat)
+!$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s,diss_e, z_rat)
     do k=1,npz
        hord_m = flagstruct%hord_mt
        hord_t = flagstruct%hord_tm
@@ -820,12 +832,7 @@ contains
 
               if ( k==1 ) then
 ! Divergence damping:
-                 nord_k=0;
-                 if (flagstruct%is_ideal_case) then
-                    d2_divg = max(flagstruct%d2_bg, flagstruct%d2_bg_k1)
-                 else
-                    d2_divg = max(0.01, flagstruct%d2_bg, flagstruct%d2_bg_k1)
-                 endif
+                   nord_k=0; d2_divg = max(0.01, flagstruct%d2_bg, flagstruct%d2_bg_k1)
 ! Vertical velocity:
                    nord_w=0; damp_w = d2_divg
                    if ( flagstruct%do_vort_damp ) then
@@ -877,7 +884,7 @@ contains
             enddo
        endif
 
-       !--- external mode divergence damping ---
+!--- external mode divergence damping ---
        if ( flagstruct%d_ext > 0. )  &
             call a2b_ord2(delp(isd,jsd,k), wk, gridstruct, npx, npy, is,    &
                           ie, js, je, ng, .false.)
@@ -890,21 +897,40 @@ contains
             enddo
          enddo
        endif
-       call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
-                  u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
-                  vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
-                  mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
-                  crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
+
+       if(flagstruct%sa3dtke_dyco) then
+          call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
+                    u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
+                    vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
+                    mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
+                    crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
 #ifdef USE_COND
-                  q_con(isd:,jsd:,k),  z_rat(isd,jsd),  &
+                    q_con(isd:,jsd:,k),  z_rat(isd,jsd),  &
 #else
-                  q_con(isd:,jsd:,1),  z_rat(isd,jsd),  &
+                    q_con(isd:,jsd:,1),  z_rat(isd,jsd),  &
 #endif
-                  kgb, heat_s, diss_e, zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
-                  flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
-                  nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
-                  damp_vt(k), damp_w, damp_t, d_con_k, &
-                  hydrostatic, gridstruct, flagstruct, bd)
+                    kgb, heat_s, diss_e,zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
+                    flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
+                    nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
+                    damp_vt(k), damp_w, damp_t, d_con_k, hydrostatic, gridstruct, flagstruct, bd,  &
+!The following optional variable is for SA-3D-TKE (kyf)
+                    sa3dtke_var%dku3d_h(isd, jsd, k) )
+       else
+          call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
+                    u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
+                    vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
+                    mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
+                    crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
+#ifdef USE_COND
+                    q_con(isd:,jsd:,k),  z_rat(isd,jsd),  &
+#else
+                    q_con(isd:,jsd:,1),  z_rat(isd,jsd),  &
+#endif
+                    kgb, heat_s, diss_e,zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
+                    flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
+                    nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
+                    damp_vt(k), damp_w, damp_t, d_con_k, hydrostatic, gridstruct, flagstruct, bd)
+       endif
 
        if((.not.flagstruct%use_old_omega) .and. last_step ) then
 ! Average horizontal "convergence" to cell center
@@ -937,17 +963,17 @@ contains
        call mpp_update_domains(uc, vc, domain, gridtype=CGRID_NE)
        call mpp_update_domains(u , v , domain, gridtype=DGRID_NE)
     endif
-    call timing_off('D_SW')
+                                                     call timing_off('d_sw')
 
     if( flagstruct%fill_dp ) call mix_dp(hydrostatic, w, delp, pt, npz, ak, bk, .false., flagstruct%fv_debug, bd, gridstruct)
 
-    call timing_on('COMM_TOTAL')
+                                                             call timing_on('COMM_TOTAL')
     call start_group_halo_update(i_pack(1), delp, domain, complete=.false.)
     call start_group_halo_update(i_pack(1), pt,   domain, complete=.true.)
 #ifdef USE_COND
     call start_group_halo_update(i_pack(11), q_con, domain)
 #endif
-    call timing_off('COMM_TOTAL')
+                                                             call timing_off('COMM_TOTAL')
 
     if ( flagstruct%d_ext > 0. ) then
           d2_divg = flagstruct%d_ext * gridstruct%da_min_c
@@ -971,12 +997,12 @@ contains
         divg2(:,:) = 0.
     endif
 
-     call timing_on('COMM_TOTAL')
+                                       call timing_on('COMM_TOTAL')
      call complete_group_halo_update(i_pack(1), domain)
 #ifdef USE_COND
      call complete_group_halo_update(i_pack(11), domain)
 #endif
-     call timing_off('COMM_TOTAL')
+                                       call timing_off('COMM_TOTAL')
     if ( flagstruct%fv_debug ) then
          if ( .not. flagstruct%hydrostatic )    &
          call prt_mxm('delz',  delz, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
@@ -1036,26 +1062,24 @@ contains
                      gridstruct%bounded_domain, .true., npx, npy, flagstruct%a2b_ord, bd)
        else
 #ifndef SW_DYNAMICS
-        call timing_on('UPDATE_DZ')
+                                            call timing_on('UPDATE_DZ')
         call update_dz_d(nord_v, damp_vt, flagstruct%hord_tm, is, ie, js, je, npz, ng, npx, npy, gridstruct%area,  &
                          gridstruct%rarea, dp_ref, zs, zh, crx, cry, xfx, yfx, ws, rdt, gridstruct, bd, flagstruct%lim_fac, &
                          flagstruct%dz_min, flagstruct%psm_bc)
-        call timing_off('UPDATE_DZ')
+                                            call timing_off('UPDATE_DZ')
     if ( flagstruct%fv_debug ) then
          if ( .not. flagstruct%hydrostatic )    then
             call prt_mxm('delz updated',  delz, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
-            call prt_mxm('WS', ws, is, ie, js, je, 0, 1, 1., gridstruct%area_64, domain)
+            call prt_maxmin('WS', ws, is, ie, js, je, 0, 1, 1.)
          endif
     endif
 
         if (idiag%id_ws>0 .and. last_step) then
-!           call prt_mxm('WS', ws, is, ie, js, je, 0, 1, 1., gridstruct%area_64, domain)
+!           call prt_maxmin('WS', ws, is, ie, js, je, 0, 1, 1., master)
             used=send_data(idiag%id_ws, ws, fv_time)
         endif
                                                          call timing_on('Riem_Solver')
 
-
-        call timing_on('Riem_Solver')
         call Riem_Solver3(flagstruct%m_split, dt,  is,  ie,   js,   je, npz, ng,     &
                          isd, ied, jsd, jed, &
                          akap, cappa, cp,  &
@@ -1065,11 +1089,11 @@ contains
                          ptop, zs, q_con, w, delz, pt, delp, zh,   &
                          pe, pkc, pk3, pk, peln, ws, &
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
-                         flagstruct%use_logp, remap_step, beta<-0.1, flagstruct%d2bg_zq, &
-                         flagstruct%fv_debug, flagstruct%fast_tau_w_sec)
-        call timing_off('Riem_Solver')
+                         flagstruct%use_logp, remap_step, beta<-0.1, &
+                         flagstruct%fast_tau_w_sec)
+                                                         call timing_off('Riem_Solver')
 
-        call timing_on('COMM_TOTAL')
+                                       call timing_on('COMM_TOTAL')
         if ( gridstruct%square_domain ) then
           call start_group_halo_update(i_pack(4), zh ,  domain)
           call start_group_halo_update(i_pack(5), pkc,  domain, whalo=2, ehalo=2, shalo=2, nhalo=2)
@@ -1077,7 +1101,7 @@ contains
           call start_group_halo_update(i_pack(4), zh ,  domain, complete=.false.)
           call start_group_halo_update(i_pack(4), pkc,  domain, complete=.true.)
         endif
-        call timing_off('COMM_TOTAL')
+                                       call timing_off('COMM_TOTAL')
         if ( remap_step )  &
         call pe_halo(is, ie, js, je, isd, ied, jsd, jed, npz, ptop, pe, delp)
 
@@ -1135,7 +1159,7 @@ contains
         if ( gridstruct%square_domain ) then
            call timing_on('COMM_TOTAL')
            call complete_group_halo_update(i_pack(5), domain)
-           call timing_off('COMM_TOTAL')
+                                       call timing_off('COMM_TOTAL')
         endif
 #endif SW_DYNAMICS
      endif    ! end hydro check
@@ -1158,7 +1182,7 @@ contains
 !----------------------------
 ! Compute pressure gradient:
 !----------------------------
-    call timing_on('PG_D')
+                                       call timing_on('PG_D')
     if ( hydrostatic ) then
        if ( beta > 0. ) then
           call grad1_p_update(divg2, u, v, pkc, gz, dt, ng, gridstruct, bd, npx, npy, npz, ptop, beta_d, flagstruct%a2b_ord)
@@ -1197,7 +1221,7 @@ contains
        endif
 #endif
    endif
-   call timing_off('PG_D')
+                                       call timing_off('PG_D')
 
 ! *** Inline Rayleigh friction here?
    if( flagstruct%RF_fast .and. flagstruct%tau > 0. )  &
@@ -1235,60 +1259,7 @@ contains
     endif
 !-------------------------------------------------------------------------------------------------------
 
-!-----------------------------------------------------------------------
-! Fast Physics >>>
-!-----------------------------------------------------------------------
-
-      if (flagstruct%do_fast_phys) then
-
-          call timing_on('FAST_PHYS')
-
-          call fast_phys (is, ie, js, je, isd, ied, jsd, jed, npz, npx, npy, nq, &
-             flagstruct%c2l_ord, dt, consv, akap, ptop, phis, te0_2d, u, v, w, pt, &
-             delp, delz, q_con, cappa, q, pkz, zvir, flagstruct%te_err, flagstruct%tw_err, &
-             gridstruct, domain, bd, hydrostatic, do_adiabatic_init, &
-             flagstruct%consv_checker, flagstruct%adj_mass_vmr)
-
-          call timing_on('COMM_TOTAL')
-          !some mpp domains updates are commented out at this moment -- Linjiong
-          !future visit is needed if the model is not reprodicible using fast physics
-          !--- the following performs a staggered vector update with appropriate rotations
-          !call mpp_update_domains (u, v, domain, gridtype=DGRID_NE)
-          !--- the following is a 4D update for all the tracers
-          !call mpp_update_domains(q, domain)
-          !--- the following will be buffered into a single update
-          call mpp_update_domains (delp, domain, complete=.false.)
-          call mpp_update_domains (pt, domain, complete=.false.)
-          !call mpp_update_domains (w, domain, complete=.false.)
-          call mpp_update_domains (q_con, domain, complete=.false.)
-          call mpp_update_domains (cappa, domain, complete=.true.)
-          call timing_off('COMM_TOTAL')
-
-          if (remap_step) then
-              pe (is:ie, 1, js:je) = ptop
-              peln (is:ie, 1, js:je) = log (pe (is:ie, 1, js:je))
-              pk (is:ie, js:je, 1) = exp (akap * peln (is:ie, 1, js:je))
-              do k = 2, npz + 1
-                  do j = js, je
-                      do i = is, ie
-                          pe (i, k, j) = pe (i, k-1, j) + delp (i, j, k-1)
-                          peln (i, k, j) = log (pe (i, k, j))
-                          pk (i, j, k) = exp (akap * peln (i, k, j))
-                      enddo
-                  enddo
-              enddo
-              call pe_halo (is, ie, js, je, isd, ied, jsd, jed, npz, ptop, pe, delp)
-          endif
-
-          call timing_off('FAST_PHYS')
-
-      endif
-
-!-----------------------------------------------------------------------
-! <<< Fast Physics
-!-----------------------------------------------------------------------
-
-    call timing_on('COMM_TOTAL')
+                                                     call timing_on('COMM_TOTAL')
     if( it==n_split .and. gridstruct%grid_type<4 .and. .not. gridstruct%bounded_domain) then
 ! Prevent accumulation of rounding errors at overlapped domain edges:
        call mpp_get_boundary(u, v, domain, ebuffery=ebuffer,  &
@@ -1320,7 +1291,7 @@ contains
     if ( .not. flagstruct%regional .and. it/=n_split)   &
          call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
-    call timing_off('COMM_TOTAL')
+                                                     call timing_off('COMM_TOTAL')
 
 #ifdef SW_DYNAMICS
     endif
@@ -1374,8 +1345,7 @@ contains
           enddo
           used=send_data(idiag%id_ws, ws, fv_time)
       endif
-   endif
-
+    endif
 #endif
 
     if (gridstruct%nested) then
@@ -1426,17 +1396,37 @@ contains
             call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
 
-      endif
+    endif
 
       if ( do_diag_debug_dyn ) then
          call debug_column_dyn( pt, delp, delz, u, v, w, q, heat_source, cappa, akap, &
               allocated(heat_source), npz, nq, sphum, flagstruct%nwat, zvir, ptop, hydrostatic, bd, fv_time, n_map, it)
       endif
 
+
 !-----------------------------------------------------
   enddo   ! time split loop
   first_call=.false.
 !-----------------------------------------------------
+!The following is for SA-3D-TKE (kyf) (modify for data structure)(update mpi use)
+!--calculating shear deformation and TKE transport for 3d TKE scheme
+    if(flagstruct%sa3dtke_dyco) then
+     if ( end_step ) then
+       sgs_tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
+       call mpp_update_domains(q(:,:,:,sgs_tke), domain, complete=.false.)
+       call mpp_update_domains(sa3dtke_var%dku3d_e(:,:,:), domain, complete=.true.) ! update dku3d_e at halo
+
+       call diff3d(npx, npy, npz, nq, ua, va, w,        &
+                  q, sa3dtke_var%deform_1, sa3dtke_var%deform_2, &
+                  sa3dtke_var%deform_3, sa3dtke_var%dku3d_e,  &
+                  zh, dp_ref, gridstruct, bd)
+       call mpp_update_domains(sa3dtke_var%deform_1, domain, complete=.false.)
+       call mpp_update_domains(sa3dtke_var%deform_2, domain, complete=.false.)
+       call mpp_update_domains(sa3dtke_var%deform_3, domain, complete=.true.)
+     endif
+    endif
+
+
     if ( nq > 0 .and. .not. flagstruct%inline_q ) then
        call timing_on('COMM_TOTAL')
        call timing_on('COMM_TRACER')
@@ -1448,6 +1438,7 @@ contains
   if ( flagstruct%fv_debug ) then
        if(is_master()) write(*,*) 'End of n_split loop'
   endif
+
 
   if ( n_con/=0 .and. flagstruct%d_con > 1.e-5 ) then
        nf_ke = min(3, flagstruct%nord+1)
@@ -1503,12 +1494,6 @@ contains
 
   endif
   if (allocated(heat_source)) deallocate( heat_source ) !If ncon == 0 but d_con > 1.e-5, this would not be deallocated in earlier versions of the code
-
-
-  if ((.not. hydrostatic) .and. w_forcing .and. present(time_total)) then
-     call do_w_forcing(bd, npx, npy, npz, w, delz, phis, &
-          flagstruct%grid_type, gridstruct%agrid, domain, flagstruct, bdt, time_total)
-  endif
 
   if ( end_step ) then
     deallocate(    gz )
@@ -2184,6 +2169,286 @@ enddo    ! end k-loop
 
 end subroutine one_grad_p
 
+!The following is for SA-3D-TKE
+subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
+                  deform_1, deform_2, deform_3,  dku3d_e,    &
+                  zh, dp_ref, gridstruct, bd)
+
+    use fv_arrays_mod,      only: fv_grid_type
+
+    integer, intent(in) :: nq, npx, npy, npz
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    real, intent(in) ::     ua(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(in) ::     va(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(in) ::      w(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(in) ::      q(bd%isd:bd%ied, bd%jsd:bd%jed, npz, nq)
+    real, intent(in) ::     zh(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)
+    real, intent(in) ::     dku3d_e(bd%isd:bd%ied  ,bd%jsd:bd%jed,npz)
+
+    !real, intent(in) ::     gz(bd%is:,bd%js:,1:) ! KGao: dims may not be right; zh is now used
+    real, intent(in) ::     dp_ref(npz)
+
+    real, intent(out) ::    deform_1(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(out) ::    deform_2(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(out) ::    deform_3(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    type(fv_grid_type), intent(IN), target :: gridstruct
+
+! local
+
+    real, pointer, dimension(:,:) :: dx, dy, rarea
+    integer :: is, ie, js, je, isd, ied, jsd, jed, i, j, k
+    real:: dudx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dudy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dvdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dvdy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dwdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dwdy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dudz(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dvdz(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dwdz(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+    real:: vt(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
+    real:: u_e(bd%is:bd%ie,npz+1)
+    real:: v_e(bd%is:bd%ie,npz+1)
+    real:: w_e(bd%is:bd%ie,npz+1)
+
+    real:: dkdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dkdy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+
+    integer :: sgs_tke
+    real :: tke_1(bd%isd:bd%ied+2,  bd%jsd:bd%jed+2)
+    real :: dedy_1(bd%isd:bd%ied+1, bd%jsd:bd%jed+1, npz)
+    real :: dedy_2(bd%isd:bd%ied,   bd%jsd:bd%jed,   npz)
+    real :: dedx_1(bd%isd:bd%ied+1, bd%jsd:bd%jed+1, npz)
+    real :: dedx_2(bd%isd:bd%ied,   bd%jsd:bd%jed,   npz)
+    real :: tke_2(npz)
+    real :: dedz_1(npz)
+    real :: dedz_2(bd%isd:bd%ied,  bd%jsd:bd%jed,npz)
+    real :: tmp
+
+    real :: dz
+    
+    dx  => gridstruct%dx
+    dy  => gridstruct%dy
+    rarea   => gridstruct%rarea
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd  = bd%isd
+    ied  = bd%ied
+    jsd  = bd%jsd
+    jed  = bd%jed
+
+!===========================================================
+! Calculate deform_1 and deform_2
+! deform_1 = 2*dw/dz**2+(du/dz**2+dv/dz**2)
+!                +(dw/dx*du/dz+dw/dy*dv/dz)
+! deform_2 = 2*(du/dx**2+dv/dy**2)+(du/dy+dv/dx)**2
+!                +(dw/dx**2+dw/dy**2)+(dw/dx*du/dz+dw/dy*dv/dz)
+!===========================================================
+
+! KGao: make ut and vt private as suggested by Lucas
+
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,ua,va,w,dx,dy,rarea, &
+!$OMP                           dudx,dudy,dvdx,dvdy,dwdx,dwdy)              &
+!$OMP                           private(ut,vt)
+   do k=1,npz
+!-------------------------------------
+! get du/dy and dv/dx
+       do j=js,je+1
+          do i=is,ie
+             vt(i,j) = ua(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             ut(i,j) = va(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dudy(i,j,k) = rarea(i,j)*(vt(i,j+1)-vt(i,j))
+             dvdx(i,j,k) = rarea(i,j)*(ut(i+1,j)-ut(i,j))
+          enddo
+       enddo
+!-------------------------------------
+! get du/dx and dv/dy
+       do j=js,je
+          do i=is,ie+1
+             ut(i,j) = ua(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je+1
+          do i=is,ie
+             vt(i,j) = va(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dudx(i,j,k) = rarea(i,j)*(ut(i+1,j)-ut(i,j))
+             dvdy(i,j,k) = rarea(i,j)*(vt(i,j+1)-vt(i,j))
+          enddo
+       enddo
+!-------------------------------------
+! get dw/dx and dw/dy
+       do j=js,je
+          do i=is,ie+1
+             ut(i,j) = w(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je+1
+          do i=is,ie
+             vt(i,j) = w(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dwdx(i,j,k) = rarea(i,j)*(ut(i+1,j)-ut(i,j))
+             dwdy(i,j,k) = rarea(i,j)*(vt(i,j+1)-vt(i,j))
+          enddo
+       enddo
+   enddo   !z loop
+
+!-------------------------------------
+! get du/dz, dv/dz and dw/dz
+
+! KGao: use Lucas's method as in compute_dudz()
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,ua,va,w,  &
+!$OMP       zh,dp_ref,dudz,dvdz,dwdz) &
+!$OMP    private(u_e,v_e,w_e,dz)
+   do j=js,je
+      call edge_profile1(ua(is:ie,j,:), u_e, is, ie, npz, dp_ref, 1)
+      call edge_profile1(va(is:ie,j,:), v_e, is, ie, npz, dp_ref, 1)
+      call edge_profile1(w(is:ie,j,:),  w_e, is, ie, npz, dp_ref, 1)
+      do k=1,npz
+         do i=is,ie
+            dz = zh(i,j,k) - zh(i,j,k+1)
+            dudz(i,j,k) = (u_e(i,k)-u_e(i,k+1))/dz
+            dvdz(i,j,k) = (v_e(i,k)-v_e(i,k+1))/dz
+            dwdz(i,j,k) = (w_e(i,k)-w_e(i,k+1))/dz
+         enddo
+      enddo
+   enddo
+
+!-------------------------------------
+! get deform_1 and deform_2 based on all terms
+
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,deform_1,deform_2, &
+!$OMP              dudx,dudy,dudz,dvdx,dvdy,dvdz,dwdx,dwdy,dwdz) &
+!$OMP              private(tmp)
+   do k=1,npz
+       do j=js,je
+          do i=is,ie
+             tmp=dwdx(i,j,k)*dudz(i,j,k)+dwdy(i,j,k)*dvdz(i,j,k)
+             deform_1(i,j,k)=  2*dwdz(i,j,k)**2+                   &
+               dudz(i,j,k)**2+dvdz(i,j,k)**2+tmp
+             deform_2(i,j,k)=                                      &
+               2*(dudx(i,j,k)**2+dvdy(i,j,k)**2)+  &
+               (dudy(i,j,k)+dvdx(i,j,k))**2+                       &
+               dwdx(i,j,k)**2+dwdy(i,j,k)**2+tmp
+          enddo
+       enddo
+   enddo
+
+!===========================================================
+! Calculate deform_3
+! deform_3 = d(kqde/dx)/dx + d(kqde/dy)/dy
+! where e is tke
+!===========================================================
+
+   sgs_tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
+
+! KGao: make the 2d temporay arrays private - as suggested by Lucas
+
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,ua,va,w,q,dx,dy,rarea, &
+!$OMP                 dku3d_e,dkdx,dkdy,dedx_1,dedy_1,sgs_tke,dedy_2,dedx_2)  &
+!$OMP                           private(ut,vt,tke_1)
+   do k=1,npz
+!-------------------------------------
+       do j=js,je+2
+          do i=is,ie+2
+             tke_1(i,j)=q(i,j,k,sgs_tke)
+          enddo
+       enddo
+       do j=js,je+2
+          do i=is,ie
+             vt(i,j)=tke_1(i,j)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je+1
+          do i=is,ie
+             dedy_1(i,j,k)=rarea(i,j)*(vt(i,j+1)-vt(i,j))
+          enddo
+       enddo
+       do j=js,je+1
+          do i=is,ie
+             vt(i,j)=dedy_1(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dedy_2(i,j,k)=rarea(i,j)*(vt(i,j+1)-vt(i,j))
+          enddo
+       enddo
+!-------------------------------------
+       do j=js,je
+          do i=is,ie+2
+             ut(i,j)=tke_1(i,j)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             dedx_1(i,j,k)=rarea(i,j)*(ut(i+1,j)-ut(i,j))
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             ut(i,j)=dedx_1(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dedx_2(i,j,k)=rarea(i,j)*(ut(i+1,j)-ut(i,j))
+          enddo
+       enddo
+       do j=js,je+1
+          do i=is,ie
+             vt(i,j)=dku3d_e(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dkdy(i,j,k)=rarea(i,j)*(vt(i,j+1)-vt(i,j))
+       enddo
+       enddo
+       do j=js,je
+          do i=is,ie+1
+             ut(i,j)=dku3d_e(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dkdx(i,j,k)=rarea(i,j)*(ut(i+1,j)-ut(i,j))
+          enddo
+       enddo
+   enddo ! z loop
+!-------------------------------------
+! get deform_3 based on all terms
+
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,deform_3, &
+!$OMP                   dku3d_e,dkdx,dkdy,dedx_1,dedy_1,sgs_tke,dedx_2,dedy_2)
+   do k=1,npz
+       do j=js,je
+          do i=is,ie
+             deform_3(i,j,k)=dku3d_e(i,j,k)*(dedx_2(i,j,k)+dedy_2(i,j,k))      &
+                     +dkdx(i,j,k)*dedx_1(i,j,k)+dkdy(i,j,k)*dedy_1(i,j,k)
+          enddo
+       enddo
+   enddo
+
+end subroutine diff3d
 
 subroutine grad1_p_update(divg2, u, v, pk, gz, dt, ng, gridstruct, bd, npx, npy, npz, ptop, beta, a2b_ord)
 
@@ -2874,67 +3139,6 @@ do 1000 j=jfirst,jlast
 
  end subroutine gz_bc
 
- !routine to compute vertical gradients in winds
- ! for 2D smag damping
- ! Call AFTER updating gz
- !TODO needs cubed-sphere support (don't compute in corners)
- subroutine compute_dudz(bd, npz, u, v, dudz, dvdz, gz, dp_ref)
-   type(fv_grid_bounds_type), intent(IN) :: bd
-   integer, intent(IN) :: npz
-   real, intent(in) :: u(bd%isd:bd%ied,  bd%jsd:bd%jed+1,npz)
-   real, intent(in) :: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,  npz)
-   real, intent(in) :: gz(bd%isd:bd%ied, bd%jsd:bd%jed,  npz+1)
-   real, intent(IN) :: dp_ref(npz)
-   real, intent(OUT) :: dudz(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz)
-   real, intent(OUT) :: dvdz(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz)
-
-   real :: dz
-   real :: ue(bd%isd:bd%ied  ,npz+1)
-   real :: ve(bd%isd:bd%ied+1,npz+1)
-   integer :: i,j,k
-   integer :: is,  ie,  js,  je
-   integer :: isd, ied, jsd, jed
-
-   is  = bd%is
-   ie  = bd%ie
-   js  = bd%js
-   je  = bd%je
-   isd  = bd%isd
-   ied  = bd%ied
-   jsd  = bd%jsd
-   jed  = bd%jed
-
-   dudz = -1.e50
-   dvdz = -1.e50
-
-   do j=jsd,jed
-
-      !TODO: pass by reference and not copy
-      call edge_profile1(v(isd:ied+1,j,:), ve, isd,  ied+1, npz, dp_ref, 0)
-      do k=1,npz
-         do i=isd+1,ied
-            dz = gz(i,j,k) + gz(i-1,j,k)
-            dz = dz - (gz(i,j,k+1) + gz(i-1,j,k+1))
-            dz = 0.5*dz*rgrav
-            dvdz(i,j,k) = (ve(i,k)-ve(i,k+1))/dz
-         enddo
-      enddo
-   enddo
-
-   do j=jsd+1,jed
-      call edge_profile1(u(isd:ied,j,:), ue, isd, ied, npz, dp_ref, 0)
-      do k=1,npz
-         do i=isd,ied
-            dz = gz(i,j,k) + gz(i,j-1,k)
-            dz = dz - (gz(i,j,k+1) + gz(i,j-1,k+1))
-            dz = 0.5*dz*rgrav
-            dudz(i,j,k) = (ue(i,k)-ue(i,k+1))/dz
-         enddo
-      enddo
-   enddo
-
-
- end subroutine compute_dudz
   subroutine molecular_diffusion_run(u,v,w,delp,pt,pkz,cappa,q,bd,   &
                             gridstruct,flagstruct,domain,i_pack,npx,npy,npz, &
                             nq,dt,it,akap,zvir,cv_air)

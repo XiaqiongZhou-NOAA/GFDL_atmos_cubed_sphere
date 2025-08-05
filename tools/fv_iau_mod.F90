@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -53,21 +53,23 @@ module fv_iau_mod
                                  get_var1_double,     &
                                  get_var3_r4,         &
                                  get_var1_real, check_var_exists
-#ifdef GFS_PHYS
-  use IPD_typedefs,        only: IPD_init_type, IPD_control_type, &
+#ifdef GFS_TYPES
+  use GFS_typedefs,        only: IPD_init_type => GFS_init_type, &
+                                 IPD_control_type => GFS_control_type, &
                                  kind_phys
+#else
+  use IPD_typedefs,        only: IPD_init_type, IPD_control_type, &
+                                 kind_phys => IPD_kind_phys
 #endif
+
   use block_control_mod,   only: block_control_type
   use fv_treat_da_inc_mod, only: remap_coef
   use tracer_manager_mod,  only: get_tracer_names,get_tracer_index, get_number_tracers
   use field_manager_mod,   only: MODEL_ATMOS
+  use cubed_sphere_inc_mod, only : read_cubed_sphere_inc, increment_data_type
   implicit none
 
   private
-
-#ifndef GFS_PHYS
-    integer, parameter :: kind_phys = 8
-#endif
 
   real,allocatable::s2c(:,:,:)
 !  real:: s2c(Atm(1)%bd%is:Atm(1)%bd%ie,Atm(1)%bd%js:Atm(1)%bd%je,4)
@@ -83,14 +85,6 @@ module fv_iau_mod
   integer, allocatable :: tracer_indicies(:)
 
   real(kind=4), allocatable:: wk3(:,:,:)
-  type iau_internal_data_type
-    real,allocatable :: ua_inc(:,:,:)
-    real,allocatable :: va_inc(:,:,:)
-    real,allocatable :: temp_inc(:,:,:)
-    real,allocatable :: delp_inc(:,:,:)
-    real,allocatable :: delz_inc(:,:,:)
-    real,allocatable :: tracer_inc(:,:,:,:)
-  end type iau_internal_data_type
   type iau_external_data_type
     real,allocatable :: ua_inc(:,:,:)
     real,allocatable :: va_inc(:,:,:)
@@ -102,25 +96,22 @@ module fv_iau_mod
     logical          :: drymassfixer = .false.
   end type iau_external_data_type
   type iau_state_type
-      type(iau_internal_data_type):: inc1
-      type(iau_internal_data_type):: inc2
+      type(increment_data_type)   :: inc1
+      type(increment_data_type)   :: inc2
       real(kind=kind_phys)        :: hr1
       real(kind=kind_phys)        :: hr2
       real(kind=kind_phys)        :: wt
       real(kind=kind_phys)        :: wt_normfact
   end type iau_state_type
   type(iau_state_type) :: IAU_state
-
-  public iau_external_data_type
-
-#ifdef GFS_PHYS
-  public IAU_initialize, getiauforcing
+  public iau_external_data_type,IAU_initialize,getiauforcing
 
 contains
-subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
+subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
     type (IPD_control_type), intent(in) :: IPD_Control
     type (IAU_external_data_type), intent(inout) :: IAU_Data
     type (IPD_init_type),    intent(in) :: Init_parm
+    type (fv_atmos_type), intent(inout) :: Atm
     ! local
 
     character(len=128) :: fname
@@ -240,6 +231,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
         agrid)
     deallocate ( lon, lat,agrid )
 
+
     allocate(IAU_Data%ua_inc(is:ie, js:je, km))
     allocate(IAU_Data%va_inc(is:ie, js:je, km))
     allocate(IAU_Data%temp_inc(is:ie, js:je, km))
@@ -253,7 +245,6 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     allocate (iau_state%inc1%delp_inc (is:ie, js:je, km))
     allocate (iau_state%inc1%delz_inc (is:ie, js:je, km))
     allocate (iau_state%inc1%tracer_inc(is:ie, js:je, km,ntracers))
-
     iau_state%hr1=IPD_Control%iaufhrs(1)
     iau_state%wt = 1.0 ! IAU increment filter weights (default 1.0)
     iau_state%wt_normfact = 1.0
@@ -277,11 +268,14 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
        enddo
        iau_state%wt_normfact = (2*nstep+1)/normfact
     endif
-    call read_iau_forcing(IPD_Control,iau_state%inc1,'INPUT/'//trim(IPD_Control%iau_inc_files(1)))
+    if ( Atm%flagstruct%increment_file_on_native_grid ) then
+       call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(1)), iau_state%inc1, Atm)
+    else
+       call read_iau_forcing(IPD_Control,iau_state%inc1,'INPUT/'//trim(IPD_Control%iau_inc_files(1)))
+    endif
     if (nfiles.EQ.1) then  ! only need to get incrments once since constant forcing over window
        call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
     endif
-
     if (nfiles.GT.1) then  !have multiple files, but only read in 2 at a time and interpoalte between them
        allocate (iau_state%inc2%ua_inc(is:ie, js:je, km))
        allocate (iau_state%inc2%va_inc(is:ie, js:je, km))
@@ -290,18 +284,23 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
        allocate (iau_state%inc2%delz_inc (is:ie, js:je, km))
        allocate (iau_state%inc2%tracer_inc(is:ie, js:je, km,ntracers))
        iau_state%hr2=IPD_Control%iaufhrs(2)
-       call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
+       if ( Atm%flagstruct%increment_file_on_native_grid ) then
+          call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(2)), iau_state%inc2, Atm)
+       else
+          call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
+       endif
     endif
 !   print*,'in IAU init',dt,rdt
     IAU_data%drymassfixer = IPD_control%iau_drymassfixer
 
 end subroutine IAU_initialize
 
-subroutine getiauforcing(IPD_Control,IAU_Data)
+subroutine getiauforcing(IPD_Control,IAU_Data,Atm)
 
    implicit none
    type (IPD_control_type), intent(in) :: IPD_Control
    type(IAU_external_data_type),  intent(inout) :: IAU_Data
+   type (fv_atmos_type), intent(inout) :: Atm
    real(kind=kind_phys) t1,t2,sx,wx,wt,dtp
    integer n,i,j,k,sphum,kstep,nstep,itnext
 
@@ -310,7 +309,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
        return
    endif
 
-   if (nfiles .eq. 1) then
+   if (nfiles .eq. 1) then 
        t1 = IPD_Control%iaufhrs(1)-0.5*IPD_Control%iau_delthrs
        t2 = IPD_Control%iaufhrs(1)+0.5*IPD_Control%iau_delthrs
    else
@@ -375,7 +374,11 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
             iau_state%hr2=IPD_Control%iaufhrs(itnext)
             iau_state%inc1=iau_state%inc2
             if (is_master()) print *,'reading next increment file',trim(IPD_Control%iau_inc_files(itnext))
-            call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(itnext)))
+            if ( Atm%flagstruct%increment_file_on_native_grid ) then
+               call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(itnext)), iau_state%inc2, Atm)
+            else
+               call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(itnext)))
+            endif
          endif
          call updateiauforcing(IPD_Control,IAU_Data,iau_state%wt)
       endif
@@ -438,7 +441,7 @@ subroutine updateiauforcing(IPD_Control,IAU_Data,wt)
 
 subroutine read_iau_forcing(IPD_Control,increments,fname)
     type (IPD_control_type), intent(in) :: IPD_Control
-    type(iau_internal_data_type), intent(inout):: increments
+    type(increment_data_type), intent(inout):: increments
     character(len=*),  intent(in) :: fname
 !locals
     real, dimension(:,:,:), allocatable:: u_inc, v_inc
@@ -520,8 +523,6 @@ subroutine interp_inc(field_name,var,jbeg,jend)
     enddo
  enddo
 end subroutine interp_inc
-
-#endif
 
 end module fv_iau_mod
 

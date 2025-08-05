@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -29,12 +29,11 @@ module fv_arrays_mod
   use horiz_interp_type_mod, only: horiz_interp_type
   use mpp_mod,               only: mpp_broadcast
   use platform_mod,          only: r8_kind
-  use constants_mod,         only: cnst_radius => radius, cnst_omega => omega
+
+
   public
 
   integer, public, parameter :: R_GRID = r8_kind
-  real(kind=r8_kind), public :: radius = cnst_radius
-  real(kind=r8_kind), public :: omega = cnst_omega
 
   !Several 'auxiliary' structures are introduced here. These are for
   ! the internal use by certain modules, and although fv_atmos_type
@@ -55,8 +54,8 @@ module fv_arrays_mod
 
      real, allocatable :: zxg(:,:)
 
-     integer :: id_u_dt_sg, id_v_dt_sg, id_t_dt_sg, id_qv_dt_sg, id_diss
-     integer :: id_ws, id_te, id_amdt, id_divg, id_aam
+     integer :: id_u_dt_sg, id_v_dt_sg, id_t_dt_sg, id_qv_dt_sg
+     integer :: id_ws, id_te, id_amdt, id_mdt, id_divg, id_aam
      logical :: initialized = .false.
      real  sphum, liq_wat, ice_wat       ! GFDL physics
      real  rainwat, snowwat, graupel, hailwat
@@ -178,11 +177,8 @@ module fv_arrays_mod
      integer :: npx_g, npy_g, ntiles_g ! global domain
 
      real(kind=R_GRID) :: global_area
-     logical :: g_sum_initialized = .false. !Not currently used but can be useful
-     logical:: sw_corner = .false.
-     logical:: se_corner = .false.
-     logical:: ne_corner = .false.
-     logical:: nw_corner = .false.
+     logical :: g_sum_initialized = .false. !< Not currently used but can be useful
+     logical:: sw_corner = .false., se_corner = .false., ne_corner = .false., nw_corner = .false.
 
      real(kind=R_GRID) :: da_min, da_max, da_min_c, da_max_c
 
@@ -204,7 +200,7 @@ module fv_arrays_mod
                                    !< cubed-sphere will be used. If 4, a doubly-periodic
                                    !< f-plane cartesian grid will be used. If 5, a user-defined
                                    !< orthogonal grid will be used. If -1, the grid is read
-                                   !< from INPUT/grid_spec.nc. Values 2, 3, 6, and 7 are not
+                                   !< from INPUT/grid_spec.nc. Values 2, 3, 5, 6, and 7 are not
                                    !< supported and will likely not run. The default value is 0.
 
      logical, pointer :: nested   !< Whether this is a nested grid. .false. by default.
@@ -240,7 +236,6 @@ module fv_arrays_mod
 !                                   !<  4: double periodic boundary condition on Cartesian grid
 !                                   !<  5: a user-defined orthogonal grid for stand alone regional model
 !  -> moved to grid_tools
-
 
 !> Momentum (or KE) options:
    integer :: hord_mt = 10   !< Horizontal advection scheme for momentum fluxes. A
@@ -295,7 +290,6 @@ module fv_arrays_mod
    real    :: scale_z = 0.   !< diff_z = scale_z**2 * 0.25 (only used for Riemann solver)
    real    :: w_max = 75.    !< Not used.
    real    :: z_min = 0.05   !< Not used.
-   real    :: d2bg_zq = 0.0  !< Implicit vertical diffusion for scalars (currently vertical velocity only)
    real    :: lim_fac = 1.0  !< linear scheme limiting factor when using hord = 1. 1: hord = 5, 3: hord = 6
 
    integer :: nord=1         !< Order of divergence damping: 0 for second-order; 1 for fourth-order
@@ -308,7 +302,6 @@ module fv_arrays_mod
    real    :: dddmp = 0.0    !< Dimensionless coefficient for the second-order Smagorinsky-type
                              !< divergence damping. The default is value is 0.0. 0.2
                              !< (the Smagorinsky constant) is recommended if ICs are noisy.
-   real    :: smag2d = 0.0   !< Dimensionless coefficient for 2d smag damping. Experimental!!
    real    :: d2_bg = 0.0    !< Coefficient for explicit second-order divergence damping.
                              !< This option remains active even if nord is nonzero. The default
                              !< value is 0.0. The proper range is 0 to 0.02, with 0 strongly recommended
@@ -376,20 +369,9 @@ module fv_arrays_mod
    logical :: do_sat_adj= .false.   !< Controls split GFDL Microphysics. .false. by default. Must have the same
                                     !< value as do_sat_adj in gfdl_mp_nml. Not compatible with other microphysics
                                     !< schemes. Also requires GFDL microphysics be installed within the physics driver.
-   logical :: consv_checker = .false.!< turn on energy and water conservation checker
-   logical :: do_fast_phys = .false.!< Controls fast physics, in which the SA-TKE-EDMF and part of the GWD are
-                                    !< within the acoustic time step of FV3. If .true. disabling the SA-TKE-EDMF
-                                    !< and part of the GWD in the intermediate physics.
-   logical :: do_intermediate_phys = .true.!< Controls intermediate physics, in which the GFDL MP, SA-SAS and part of the GWD are
-                                    !< within the remapping time step of FV3. If .false. disabling the GFDL MP, SA-SAS
-                                    !< and part of the GWD in the intermediate physics.
    logical :: do_inline_mp = .false.!< Controls Inline GFDL cloud microphysics, in which the full microphysics is
                                     !< called entirely within FV3. If .true. disabling microphysics within the physics
                                     !< is very strongly recommended. .false. by default.
-   logical :: do_aerosol = .false.  !< Controls climatological aerosol data used in the GFDL cloud microphyiscs.
-                                    !< .false. by default.
-   logical :: do_cosp = .false.     !< Controls COSP
-                                    !< .false. by default.
    logical :: do_f3d    = .false.   !
    logical :: no_dycore = .false.   !< Disables execution of the dynamical core, only running
                                     !< the initialization, diagnostic, and I/O routines, and
@@ -412,9 +394,6 @@ module fv_arrays_mod
                                      !< horizontal advection schemes are enabled, but is unnecessary and
                                      !< not recommended when using monotonic advection. The default is .false.
    logical :: use_old_omega = .true.
-   logical :: remap_te = .false.  !< A developmental option, remap total energy based on abs(kord_tm)
-                                  !< if kord_tm=0 use GMAO Cubic, otherwise as
-                                  !< Tv remapping
 !> PG off centering:
    real    :: beta  = 0.0  !< Parameter specifying fraction of time-off-centering for backwards
                            !< evaluation of the pressure gradient force. The default is 0.0, which
@@ -719,8 +698,8 @@ module fv_arrays_mod
                          !< considered; and for non-hydrostatic models values of 10 or less should be
                          !< considered, with smaller values for higher-resolution.
    real    :: rf_cutoff = 30.E2   !< Pressure below which no Rayleigh damping is applied if tau > 0.
-   real    :: te_err = 1.e-5 !< 64bit: 1.e-14, 32bit: 1.e-7; turn off to save computer time
-   real    :: tw_err = 1.e-8 !< 64bit: 1.e-14, 32bit: 1.e-7; turn off to save computer time
+   real    :: rf_cutoff_w = 1.E2  !< Pressure below which no fast vertical velocity Rayleigh
+                                       ! damping is applied if fast_tau_w_sec > 0.
    real    :: fast_tau_w_sec = 0.0 !< Time scale (seconds) for Rayleigh damping applied to vertical velocity only.
                                    !< Values of 0.2 are very effective at eliminating spurious vertical motion in
                                    !< the stratosphere. Default is 0.0, which disables this.
@@ -815,7 +794,6 @@ module fv_arrays_mod
                                   !< wave drag parameterization and for the land surface roughness than
                                   !< either computes internally. This has no effect on the representation of
                                   !< the terrain in the dynamics.
-   logical :: do_am4_remap = .false.   !< Use AM4 vertical remapping operators
 !--------------------------------------------------------------------------------------
 ! The following options are useful for NWP experiments using datasets on the lat-lon grid
 !--------------------------------------------------------------------------------------
@@ -833,13 +811,8 @@ module fv_arrays_mod
                                    !< horizontally-interpolated output from chgres. The default is .false.
                                    !< Additional options are available through external_ic_nml.
    logical :: hrrrv3_ic = .false.
-! following are namelist parameters for Stochastic Energy Baskscatter
-! dissipation estimate
-   logical :: do_diss_est  = .false.     !< compute and save dissipation estimate
    logical :: ecmwf_ic = .false.   !< If external_ic = .true., reads initial conditions from ECMWF analyses.
                                    !< The default is .false.
-   logical :: use_gfsO3 = .false.     ! only work when "ecmwf_ic = .T.".
-                                      ! Need to be 'true', when the IFS IC does not include O3 data.
    logical :: gfs_phil = .false.      !< if .T., compute geopotential inside of GFS physics (not used?)
    logical :: agrid_vel_rst = .false.   !< Whether to write the unstaggered latitude-longitude winds
                                         !< (ua and va) to the restart files. This is useful for data
@@ -859,8 +832,8 @@ module fv_arrays_mod
                                        !< from either the restart file (if restarting) or from the external initial
                                        !< condition file (if nggps_ic or ecwmf_ic are .true.). This overrides the
                                        !< hard-coded levels in fv_eta. The default is .false.
-   logical :: is_ideal_case = .false.    !< if .T., this is an ideal test case
    logical :: read_increment = .false.   !< read in analysis increment and add to restart
+   logical :: increment_file_on_native_grid = .false. !< increment is on native cubed sphere grid grid else on Gaussian grid
 ! following are namelist parameters for Stochastic Energy Baskscatter dissipation estimate
    logical :: do_skeb  = .false.         !< save dissipation estimate
    integer :: skeb_npass  = 11           !< Filter dissipation estimate "skeb_npass" times
@@ -885,13 +858,13 @@ module fv_arrays_mod
                                           !< If .false., heating from the physics is applied simply as a temperature
                                           !< tendency. The default value is .true.; ignored if hydrostatic = .true.
    logical :: use_hydro_pressure = .false.   !< Whether to compute hydrostatic pressure for input to the physics.
-                                             !< Currently only enabled for the fvGFS model.
+                                             !< Currently only enabled for the UFS model.
                                              !< Ignored in hydrostatic simulations. The default is .false.
    logical :: do_uni_zfull = .false.   !< Whether to compute z_full (the height of each modellayer,
                                        !< as opposed to z_half, the height of each model interface)
                                        !< as the midpoint of the layer, as is done for the nonhydrostatic
                                        !< solver, instead of the height of the location where p = p the mean
-                                       !< pressure in the layer. This option is not available for fvGFS or
+                                       !< pressure in the layer. This option is not available for UFS or
                                        !< the solo_core. The default is .false.
    logical :: hybrid_z    = .false.  !< Whether to use a hybrid-height coordinate, instead of
                                      !< the usual sigma-p coordinate. The default value is .false.
@@ -945,28 +918,32 @@ module fv_arrays_mod
   real(kind=R_GRID) :: deglat=15.   !< Latitude (in degrees) used to compute the uniform f-plane
                                     !< Coriolis parameter for doubly-periodic simulations
                                     !< (grid_type = 4). The default value is 15.
-  real(kind=R_GRID) :: domain_deg = 0.
-
   !The following deglat_*, deglon_* options are not used.
   real(kind=R_GRID) :: deglon_start = -30., deglon_stop = 30., &  !< boundaries of latlon patch
                        deglat_start = -30., deglat_stop = 30.
+
+   logical :: regional = .false.       !< Default setting for the regional domain.
+
+   integer :: bc_update_interval = 3   !< Default setting for interval (hours) between external regional BC data files.
+
+  integer :: nrows_blend = 0          !< # of blending rows in the outer integration domain.
+  logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
+  logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
+  logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic 
+
+!This logical variable is used for SA-3D-TKE
+     logical :: sa3dtke_dyco = .false.
 
   !>Convenience pointers
   integer, pointer :: grid_number
 
   !f1p
-  integer  :: adj_mass_vmr = 0 !0: no correction; 1: AM4/CM4 correction; 2: correction based on convertion of VMR to dry mixing ratio
-  logical :: w_limiter = .true. ! Fix excessive w - momentum conserving --- sjl
+  logical  :: adj_mass_vmr = .false. !TER: This is to reproduce answers for verona patch.  This default can be changed
+                                     !     to .true. in the next city release if desired
 
-  ! options related to regional mode
-  logical :: regional = .false.       !< Default setting for the regional domain.
-  integer :: bc_update_interval = 3   !< Default setting for interval (hours) between external regional BC data files.
-  integer :: nrows_blend = 0          !< # of blending rows in the outer integration domain.
-  logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
-  logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows.
-  logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic mode
-  logical :: restart_from_agrid_winds = .false.  !< Whether to restart from A-grid winds
-  logical :: write_optional_dgrid_vel_rst = .true. !< Whether to write out optional D-grid winds when restart_from_agrid_winds is active
+  !integer, pointer :: test_case
+  !real,    pointer :: alpha
+
   end type fv_flags_type
 
   type fv_nest_BC_type_3D
@@ -1087,19 +1064,22 @@ module fv_arrays_mod
      logical :: BCfile_ne_is_open=.false.
      logical :: BCfile_sw_is_open=.false.
   end type fv_nest_type
+  
+  !3D-SA-TKE (kyf) (modify for data structure)
+  type sa3dtke_type
+    real, _ALLOCATABLE :: deform_1(:,:,:)  _NULL !< horizontal deformation
+    real, _ALLOCATABLE :: deform_2(:,:,:)  _NULL !< vertical deformation
+    real, _ALLOCATABLE :: deform_3(:,:,:)  _NULL !< 3D TKE transport & pressure correlation
+    real, _ALLOCATABLE :: dku3d_h(:,:,:)   _NULL !< 3D Horizontal Eddy Diffusivity for Momentum
+    real, _ALLOCATABLE :: dku3d_e(:,:,:)   _NULL !< 3D Eddy Diffusivity for TKE
+  end type sa3dtke_type
+  !3D-SA-TKE-end
 
   type inline_mp_type
-
-    real, _ALLOCATABLE :: prew(:,:)     _NULL
     real, _ALLOCATABLE :: prer(:,:)     _NULL
     real, _ALLOCATABLE :: prei(:,:)     _NULL
     real, _ALLOCATABLE :: pres(:,:)     _NULL
     real, _ALLOCATABLE :: preg(:,:)     _NULL
-    real, _ALLOCATABLE :: prefluxw(:,:,:)     _NULL
-    real, _ALLOCATABLE :: prefluxr(:,:,:)     _NULL
-    real, _ALLOCATABLE :: prefluxi(:,:,:)     _NULL
-    real, _ALLOCATABLE :: prefluxs(:,:,:)     _NULL
-    real, _ALLOCATABLE :: prefluxg(:,:,:)     _NULL
 
     real, _ALLOCATABLE :: qv_dt(:,:,:)
     real, _ALLOCATABLE :: ql_dt(:,:,:)
@@ -1112,7 +1092,6 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: t_dt(:,:,:)
     real, _ALLOCATABLE :: u_dt(:,:,:)
     real, _ALLOCATABLE :: v_dt(:,:,:)
-
   end type inline_mp_type
 
   type phys_diag_type
@@ -1141,19 +1120,8 @@ module fv_arrays_mod
 
   end type nudge_diag_type
 
-  type sg_diag_type
-
-     real, _ALLOCATABLE :: t_dt(:,:,:)
-     real, _ALLOCATABLE :: u_dt(:,:,:)
-     real, _ALLOCATABLE :: v_dt(:,:,:)
-     real, _ALLOCATABLE :: qv_dt(:,:,:)
-
-  end type sg_diag_type
-
   type coarse_restart_type
 
-     real, _ALLOCATABLE :: u0(:,:,:)
-     real, _ALLOCATABLE :: v0(:,:,:)
      real, _ALLOCATABLE :: u(:,:,:)
      real, _ALLOCATABLE :: v(:,:,:)
      real, _ALLOCATABLE :: w(:,:,:)
@@ -1206,6 +1174,10 @@ module fv_arrays_mod
 
   end type fv_coarse_graining_type
 
+!>@brief 'allocate_fv_nest_BC_type' is an interface to subroutines
+!! that allocate the 'fv_nest_BC_type' structure that holds the nested-grid BCs.
+!>@details The subroutines can pass the array bounds explicitly or not.
+!! The bounds in Atm%bd are used for the non-explicit case.
   interface allocate_fv_nest_BC_type
      module procedure allocate_fv_nest_BC_type_3D
      module procedure allocate_fv_nest_BC_type_3D_Atm
@@ -1278,8 +1250,6 @@ module fv_arrays_mod
 !
 ! The C grid component is "diagnostic" in that it is predicted every time step
 ! from the D grid variables.
-    real, _ALLOCATABLE :: u0(:,:,:)   _NULL  !< initial (t=0) D grid zonal wind (m/s)
-    real, _ALLOCATABLE :: v0(:,:,:)   _NULL  !< initial (t=0) D grid meridional wind (m/s)
     real, _ALLOCATABLE :: u(:,:,:)    _NULL  !< D grid zonal wind (m/s)
     real, _ALLOCATABLE :: v(:,:,:)    _NULL  !< D grid meridional wind (m/s)
     real, _ALLOCATABLE :: pt(:,:,:)   _NULL  !< temperature (K)
@@ -1310,12 +1280,11 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: parent2nest_2d(:,:) _NULL !< 2d arrary for downscaling a variable from parent to its nest
 
 ! For phys coupling:
-    real, _ALLOCATABLE :: u_srf(:,:)    _NULL  ! Surface u-wind
-    real, _ALLOCATABLE :: v_srf(:,:)    _NULL  ! Surface v-wind
-    real, _ALLOCATABLE :: sgh(:,:)      _NULL  ! Terrain standard deviation
-    real, _ALLOCATABLE :: oro(:,:)      _NULL  ! land fraction (1: all land; 0: all water)
-    real, _ALLOCATABLE :: ts(:,:)       _NULL  ! skin temperature (sst) from NCEP/GFS (K) -- tile
-    real, _ALLOCATABLE :: ci(:,:)       _NULL  ! sea-ice fraction from external file
+    real, _ALLOCATABLE :: u_srf(:,:)    _NULL  !< Surface u-wind
+    real, _ALLOCATABLE :: v_srf(:,:)    _NULL  !< Surface v-wind
+    real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
+    real, _ALLOCATABLE :: oro(:,:)      _NULL  !< land fraction (1: all land; 0: all water)
+    real, _ALLOCATABLE :: ts(:,:)       _NULL  !< skin temperature (sst) from NCEP/GFS (K) -- tile
 
 ! For stochastic kinetic energy backscatter (SKEB)
     real, _ALLOCATABLE :: diss_est(:,:,:) _NULL !< dissipation estimate taken from 'heat_source'
@@ -1323,14 +1292,12 @@ module fv_arrays_mod
 !-----------------------------------------------------------------------
 ! Others:
 !-----------------------------------------------------------------------
-    real, _ALLOCATABLE :: phis(:,:)     _NULL  ! Surface geopotential (g*Z_surf)
-    real, _ALLOCATABLE :: omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
-    real, _ALLOCATABLE :: local_omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
-    real, _ALLOCATABLE :: ua(:,:,:)     _NULL  ! (ua, va) are mostly used as the A grid winds
+    real, _ALLOCATABLE :: phis(:,:)     _NULL  !< Surface geopotential (g*Z_surf)
+    real, _ALLOCATABLE :: omga(:,:,:)   _NULL  !< Vertical pressure velocity (pa/s)
+    real, _ALLOCATABLE :: ua(:,:,:)     _NULL  !< (ua, va) are mostly used as the A grid winds
     real, _ALLOCATABLE :: va(:,:,:)     _NULL
     real, _ALLOCATABLE :: uc(:,:,:)     _NULL  !< (uc, vc) are mostly used as the C grid winds
     real, _ALLOCATABLE :: vc(:,:,:)     _NULL
-
     real, _ALLOCATABLE :: ak(:)  _NULL
     real, _ALLOCATABLE :: bk(:)  _NULL
 
@@ -1388,7 +1355,7 @@ module fv_arrays_mod
 
      real    :: ptop
 
-     type(fv_grid_type) :: gridstruct
+  type(fv_grid_type) :: gridstruct
 
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -1415,18 +1382,21 @@ module fv_arrays_mod
      !Hold on to coarse-grid global grid, so we don't have to waste processor time getting it again when starting to do grid nesting
      real(kind=R_GRID), allocatable, dimension(:,:,:,:) :: grid_global
 
-     integer :: atmos_axes(4)
+  integer :: atmos_axes(4)
 
+     type(sa3dtke_type) :: sa3dtke_var ! SA-3D TKE (kyf) (modify for data structure)
      type(inline_mp_type) :: inline_mp
      type(phys_diag_type) :: phys_diag
      type(nudge_diag_type) :: nudge_diag
-     type(sg_diag_type) :: sg_diag
-     type(coarse_restart_type) :: coarse_restart
      type(fv_coarse_graining_type) :: coarse_graining
+
   end type fv_atmos_type
 
 contains
 
+!>@brief The subroutine 'allocate_fv_atmos_type' allocates the fv_atmos_type
+!>@details It includes an option to define dummy grids that have scalar and
+!! small arrays defined as null 3D arrays.
   subroutine allocate_fv_atmos_type(Atm, isd_in, ied_in, jsd_in, jed_in, is_in, ie_in, js_in, je_in, &
        npx_in, npy_in, npz_in, ndims_in, ntiles_in, ncnst_in, nq_in, dummy, alloc_2d, ngrids_in)
 
@@ -1524,13 +1494,6 @@ contains
 
     Atm%flagstruct%ndims = ndims_in
 
-    if (Atm%flagstruct%is_ideal_case) then
-       allocate (   Atm%u0(isd:ied  ,jsd:jed+1,npz) )
-       allocate (   Atm%v0(isd:ied+1,jsd:jed  ,npz) )
-    else
-       allocate (   Atm%u0(isd:isd,jsd:jsd,1) )
-       allocate (   Atm%v0(isd:isd,jsd:jsd,1) )
-    endif
     allocate (    Atm%u(isd:ied  ,jsd:jed+1,npz) )
     allocate (    Atm%v(isd:ied+1,jsd:jed  ,npz) )
 
@@ -1563,13 +1526,22 @@ contains
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.
-    if (.not. Atm%flagstruct%hydrostatic .and. .not. Atm%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
-       allocate (Atm%local_omga(isd:ied,jsd:jed,npz)); Atm%local_omga = 0.
-    endif
+
     allocate (   Atm%ua(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
     allocate (   Atm%vc(isd:ied  ,jsd:jed+1,npz) )
+    
+    !3D-SA-TKE (kyf) (modify for data structure)
+    if ( Atm%flagstruct%sa3dtke_dyco ) then
+       allocate (   Atm%sa3dtke_var%deform_1(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%deform_2(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%deform_3(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%dku3d_h(isd:ied  ,jsd:jed, npz) )
+       allocate (   Atm%sa3dtke_var%dku3d_e(isd:ied  ,jsd:jed, npz) )
+    endif
+    !3D-SA-TKE-end
+
     ! For tracer transport:
     allocate ( Atm%mfx(is:ie+1, js:je,  npz) )
     allocate ( Atm%mfy(is:ie  , js:je+1,npz) )
@@ -1579,18 +1551,10 @@ contains
     allocate (  Atm%ak(npz_2d+1) )
     allocate (  Atm%bk(npz_2d+1) )
 
-    if (Atm%flagstruct%do_inline_mp) then
-       allocate ( Atm%inline_mp%prew(is:ie,js:je) )
-       allocate ( Atm%inline_mp%prer(is:ie,js:je) )
-       allocate ( Atm%inline_mp%prei(is:ie,js:je) )
-       allocate ( Atm%inline_mp%pres(is:ie,js:je) )
-       allocate ( Atm%inline_mp%preg(is:ie,js:je) )
-       allocate ( Atm%inline_mp%prefluxw(is:ie,js:je,npz) )
-       allocate ( Atm%inline_mp%prefluxr(is:ie,js:je,npz) )
-       allocate ( Atm%inline_mp%prefluxi(is:ie,js:je,npz) )
-       allocate ( Atm%inline_mp%prefluxs(is:ie,js:je,npz) )
-       allocate ( Atm%inline_mp%prefluxg(is:ie,js:je,npz) )
-    endif
+    allocate ( Atm%inline_mp%prer(is:ie,js:je) )
+    allocate ( Atm%inline_mp%prei(is:ie,js:je) )
+    allocate ( Atm%inline_mp%pres(is:ie,js:je) )
+    allocate ( Atm%inline_mp%preg(is:ie,js:je) )
 
     !--------------------------
     ! Non-hydrostatic dynamics:
@@ -1613,8 +1577,10 @@ contains
 
 #ifdef USE_COND
       allocate ( Atm%q_con(isd:ied,jsd:jed,1:npz) )
+      ! q_con will be initialized to 0, in the following omp loop
 #else
       allocate ( Atm%q_con(isd:isd,jsd:jsd,1) )
+      Atm%q_con = 0.
 #endif
 
 ! Notes by SJL
@@ -1628,22 +1594,29 @@ contains
                 Atm%va(i,j,k) = real_big
                 Atm%pt(i,j,k) = real_big
               Atm%delp(i,j,k) = real_big
+              
+              !3D-SA-TKE (kyf) (modify for data structure)
+              if ( Atm%flagstruct%sa3dtke_dyco ) then
+                 Atm%sa3dtke_var%deform_1(i,j,k) = 0.
+                 Atm%sa3dtke_var%deform_2(i,j,k) = 0.
+                 Atm%sa3dtke_var%deform_3(i,j,k) = 0.
+                 Atm%sa3dtke_var%dku3d_h(i,j,k) = 0.
+                 Atm%sa3dtke_var%dku3d_e(i,j,k) = 0.
+              endif
+              !3D-SA-TKE-end
+#ifdef USE_COND
+             Atm%q_con(i,j,k) = 0.
+#endif
            enddo
         enddo
         do j=jsd, jed+1
            do i=isd, ied
-              if (Atm%flagstruct%is_ideal_case) then
-                 Atm%u0(i,j,k) = 0.
-              endif
                Atm%u(i,j,k) = 0.
               Atm%vc(i,j,k) = real_big
            enddo
         enddo
         do j=jsd, jed
            do i=isd, ied+1
-              if (Atm%flagstruct%is_ideal_case) then
-                 Atm%v0(i,j,k) = 0.
-              endif
                Atm%v(i,j,k) = 0.
               Atm%uc(i,j,k) = real_big
            enddo
@@ -1675,27 +1648,14 @@ contains
         enddo
         enddo
      enddo
-     if (Atm%flagstruct%do_inline_mp) then
-        do j=js, je
-           do i=is, ie
-              Atm%inline_mp%prew(i,j) = real_big
-              Atm%inline_mp%prer(i,j) = real_big
-              Atm%inline_mp%prei(i,j) = real_big
-              Atm%inline_mp%pres(i,j) = real_big
-              Atm%inline_mp%preg(i,j) = real_big
-              Atm%inline_mp%prefluxw(i,j,:) = real_big
-              Atm%inline_mp%prefluxr(i,j,:) = real_big
-              Atm%inline_mp%prefluxi(i,j,:) = real_big
-              Atm%inline_mp%prefluxs(i,j,:) = real_big
-              Atm%inline_mp%prefluxg(i,j,:) = real_big
-           enddo
-        enddo
-     endif
-
      do j=js, je
         do i=is, ie
-           Atm%ts(i,j) = 300.
+           Atm%inline_mp%prer(i,j) = real_big
+           Atm%inline_mp%prei(i,j) = real_big
+           Atm%inline_mp%pres(i,j) = real_big
+           Atm%inline_mp%preg(i,j) = real_big
 
+           Atm%ts(i,j) = 300.
            Atm%phis(i,j) = real_big
         enddo
      enddo
@@ -1921,7 +1881,7 @@ contains
     Atm%gridstruct%grid_type => Atm%flagstruct%grid_type
     Atm%flagstruct%grid_number => Atm%grid_number
     Atm%gridstruct%regional  => Atm%flagstruct%regional
-    Atm%gridstruct%bounded_domain = Atm%flagstruct%regional .or. Atm%neststruct%nested .or. (Atm%flagstruct%grid_type == 4)
+    Atm%gridstruct%bounded_domain = Atm%flagstruct%regional .or. Atm%neststruct%nested
     if (Atm%neststruct%nested) Atm%neststruct%parent_grid => Atm%parent_grid
 
     Atm%allocated = .true.
@@ -1938,8 +1898,6 @@ contains
     integer :: n
 
     if (.not.Atm%allocated) return
-    deallocate (   Atm%u0 )
-    deallocate (   Atm%v0 )
     deallocate (    Atm%u )
     deallocate (    Atm%v )
     deallocate (   Atm%pt )
@@ -1951,7 +1909,6 @@ contains
     deallocate (   Atm%pk )
     deallocate ( Atm%peln )
     deallocate (  Atm%pkz )
-    deallocate (   Atm%ts )
     deallocate ( Atm%phis )
     deallocate ( Atm%omga )
     deallocate (   Atm%ua )
@@ -1964,20 +1921,11 @@ contains
     deallocate (  Atm%cy )
     deallocate (  Atm%ak )
     deallocate (  Atm%bk )
-    deallocate ( Atm%diss_est )
 
-    if (Atm%flagstruct%do_inline_mp) then
-       deallocate ( Atm%inline_mp%prew )
-       deallocate ( Atm%inline_mp%prer )
-       deallocate ( Atm%inline_mp%prei )
-       deallocate ( Atm%inline_mp%pres )
-       deallocate ( Atm%inline_mp%preg )
-       deallocate ( Atm%inline_mp%prefluxw )
-       deallocate ( Atm%inline_mp%prefluxr )
-       deallocate ( Atm%inline_mp%prefluxi )
-       deallocate ( Atm%inline_mp%prefluxs )
-       deallocate ( Atm%inline_mp%prefluxg )
-    endif
+    deallocate ( Atm%inline_mp%prer )
+    deallocate ( Atm%inline_mp%prei )
+    deallocate ( Atm%inline_mp%pres )
+    deallocate ( Atm%inline_mp%preg )
 
     deallocate ( Atm%parent2nest_2d )
 

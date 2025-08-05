@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,7 +18,6 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-
 module fv_grid_tools_mod
 
 ! <table>
@@ -116,13 +115,17 @@ module fv_grid_tools_mod
 ! </table>
 
 
-  use constants_mod,     only: grav, omega, pi=>pi_8,
-  use fv_arrays_mod,  only: radius, omega ! scaled for small earth
+  use constants_mod,     only: grav, omega, pi=>pi_8, cnst_radius=>radius, small_fac
   use fms_mod,           only: mpp_clock_id, mpp_clock_begin, mpp_clock_end, CLOCK_ROUTINE, clock_flag_default
   use fv_arrays_mod,     only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
   use fv_grid_utils_mod, only: gnomonic_grids, great_circle_dist, &
                                mid_pt_sphere, spherical_angle, &
                                cell_center2, get_area, inner_prod, fill_ghost, &
+                               direct_transform, cube_transform, dist2side_latlon, &
+                               spherical_linear_interpolation, big_number
+  use fv_timing_mod,     only: timing_on, timing_off
+  use fv_mp_mod,         only: is_master, fill_corners, XDir, YDir
+  use fv_mp_mod,         only: mp_bcst, mp_reduce_max, mp_stop, grids_master_procs
   use sorted_index_mod,  only: sorted_inta, sorted_intb
   use mpp_mod,           only: mpp_error, FATAL, get_unit, mpp_chksum, mpp_pe, stdout, &
                                mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_npes, &
@@ -150,6 +153,8 @@ module fv_grid_tools_mod
   implicit none
   private
 #include <netcdf.inc>
+
+  real(kind=R_GRID), parameter:: radius = cnst_radius
 
   real(kind=R_GRID), parameter:: todeg = 180.0d0/pi          !< convert to degrees
   real(kind=R_GRID), parameter:: torad = pi/180.0d0          !< convert to radians
@@ -725,7 +730,7 @@ contains
 
        if (Atm%flagstruct%grid_type == 4) then
           call setup_cartesian(npx, npy, Atm%flagstruct%dx_const, Atm%flagstruct%dy_const, &
-               Atm%flagstruct%deglat, Atm%flagstruct%domain_deg, Atm%bd, Atm)
+               Atm%flagstruct%deglat, Atm%bd)
        elseif (Atm%flagstruct%grid_type == 5) then
           call setup_orthogonal_grid(npx, npy, Atm%bd, grid_file)
        else
@@ -754,7 +759,7 @@ contains
              if (use_timer) call mpp_clock_end (id_timer3b)
 
           else
-             if( trim(grid_file) == 'INPUT/grid_spec.nc' .or. Atm%flagstruct%grid_type < 0 ) then
+             if(trim(grid_file) .NE. 'Inline' .or. Atm%flagstruct%grid_type < 0) then
                 call read_grid(Atm, grid_file, ndims, nregions, ng)
 
              ! Here if we are reading from grid_spec and the grid has a nest we need to assemble
@@ -776,6 +781,19 @@ contains
                                    grid(isection_s:isection_e,jsection_s:jsection_e,1),grid_global(1-ng:npx+ng,1-ng:npy+ng,1,1),is_master(),ng,ng)
                    call mpp_gather(isection_s,isection_e,jsection_s,jsection_e,atm%pelist, &
                                    grid(isection_s:isection_e,jsection_s:jsection_e,2),grid_global(1-ng:npx+ng,1-ng:npy+ng,2,1),is_master(),ng,ng)
+                   !do we need the haloes?!
+                   !do j=jsd,jed
+                   !do i=isd,ied
+                     !grid_global(i,j,1,1)=grid(i,j,1)
+                     !grid_global(i,j,2,1)=grid(i,j,2)
+                   !enddo
+                   !enddo
+                   !do j=1,npy
+                   !do i=1,npx
+                     !call mpp_max(grid_global(i,j,1,1),atm%pelist)
+                     !call mpp_max(grid_global(i,j,2,1),atm%pelist)
+                   !enddo
+                   !enddo
                 endif
 
              else
@@ -1159,6 +1177,38 @@ contains
           enddo
        endif
 
+       if ( sw_corner ) then
+             i=1; j=1
+             p1(1:2) = grid(i,j,1:2)
+             call mid_pt_sphere(grid(i,j,1:2), grid(i+1,j,1:2), p2)
+             p3(1:2) = agrid(i,j,1:2)
+             call mid_pt_sphere(grid(i,j,1:2), grid(i,j+1,1:2), p4)
+             area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
+       endif
+       if ( se_corner ) then
+             i=npx; j=1
+             call mid_pt_sphere(grid(i-1,j,1:2), grid(i,j,1:2), p1)
+             p2(1:2) = grid(i,j,1:2)
+             call mid_pt_sphere(grid(i,j,1:2), grid(i,j+1,1:2), p3)
+             p4(1:2) = agrid(i,j,1:2)
+             area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
+       endif
+       if ( ne_corner ) then
+             i=npx; j=npy
+             p1(1:2) = agrid(i-1,j-1,1:2)
+             call mid_pt_sphere(grid(i,j-1,1:2), grid(i,j,1:2), p2)
+             p3(1:2) = grid(i,j,1:2)
+             call mid_pt_sphere(grid(i-1,j,1:2), grid(i,j,1:2), p4)
+             area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
+       endif
+       if ( nw_corner ) then
+             i=1; j=npy
+             call mid_pt_sphere(grid(i,j-1,1:2), grid(i,j,1:2), p1)
+             p2(1:2) = agrid(i,j-1,1:2)
+             call mid_pt_sphere(grid(i,j,1:2), grid(i+1,j,1:2), p3)
+             p4(1:2) = grid(i,j,1:2)
+             area_c(i,j) = 3.*get_area(p1, p4, p2, p3, radius)
+       endif
    endif
 !-----------------
        if (use_timer) call mpp_clock_end (id_timer6)
@@ -1273,8 +1323,6 @@ contains
 202    format(A,A,i4.4,A,i4.4,A)
 
        ! Get and print Grid Statistics
-       !NOTE: This only computes for a small part of the global domain sor the results can be inaccurate
-       ! for non-uniform grids.
        dxAV =0.0
        angAV=0.0
        aspAV=0.0
@@ -1331,8 +1379,9 @@ contains
           dxAV  = dxAV  / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
           aspAV = aspAV / ( (ceiling(npy/2.0))*(ceiling(npx/2.0)) )
           write(*,*  ) ''
-          write(*,*) ' Radius is ', radius, ', omega is ', omega!, ' small_earth_scale = ', small_earth_scale
+          write(*,*) ' Radius is ', radius, ', omega is ', omega, ' small_fac = ', small_fac
           write(*,*  ) ' Cubed-Sphere Grid Stats : ', npx,'x',npy,'x',nregions
+          print*, dxN, dxM, dxAV, dxN, dxM
           write(*,'(A,f11.2,A,f11.2,A,f11.2,A,f11.2)') '      Grid Length               : min: ', dxN,' max: ', dxM,' avg: ', dxAV, ' min/max: ',dxN/dxM
           write(*,'(A,e21.14,A,e21.14,A,e21.14)') '      Deviation from Orthogonal : min: ',angN,' max: ',angM,' avg: ',angAV
           write(*,'(A,e21.14,A,e21.14,A,e21.14)') '      Aspect Ratio              : min: ',aspN,' max: ',aspM,' avg: ',aspAV
@@ -1423,16 +1472,12 @@ contains
 
   contains
 
-    subroutine setup_cartesian(npx, npy, dx_const, dy_const, deglat, domain_deg, bd, Atm)
+    subroutine setup_cartesian(npx, npy, dx_const, dy_const, deglat, bd)
 
-      type(fv_atmos_type), intent(INOUT), target :: Atm
       type(fv_grid_bounds_type), intent(IN) :: bd
        integer, intent(in):: npx, npy
-       real(kind=R_GRID), intent(IN) :: deglat
-       real(kind=R_GRID), intent(INOUT) :: dx_const, dy_const
-       real(kind=R_GRID), intent(IN) :: domain_deg
-
-       real(kind=R_GRID) domain_rad, lat_rad, lon_rad
+       real(kind=R_GRID), intent(IN) :: dx_const, dy_const, deglat
+       real(kind=R_GRID) lat_rad, lon_rad, domain_rad
        integer i,j
        integer :: is,  ie,  js,  je
        integer :: isd, ied, jsd, jed
@@ -1446,24 +1491,9 @@ contains
        jsd = bd%jsd
        jed = bd%jed
 
-       if (domain_deg > 0.05) then
-          domain_rad = pi/180. * domain_deg 
-       else 
-          domain_rad = pi/16. ! arbitrary 
-       endif
-
+       domain_rad = pi/16.   ! arbitrary
        lat_rad = deglat * pi/180.
-       !lon_rad = 0.          ! arbitrary
-       lon_rad = - 50.  * pi /180.         ! careful: weird physics IC (tsc) when this is around 0
-
-       !added by Joseph
-       if (domain_deg > 0.05) then
-         dx_const = domain_deg*100000/(npx-1)
-         dy_const = dx_const 
-         if (is_master()) print*,"Warning: Recalculating dx:", dx_const
-         if (is_master()) print*,"Creating a square doubly periodic domain of size", &
-          domain_deg, "degrees, a dx:", dx_const, ", centered at lonlat (deg): ", lon_rad *180./pi, deglat
-       endif
+       lon_rad = 0.          ! arbitrary
 
        dx(:,:)  = dx_const
        rdx(:,:) = 1./dx_const
@@ -1486,51 +1516,16 @@ contains
        area_c(:,:)  = dx_const*dy_const
        rarea_c(:,:) = 1./(dx_const*dy_const)
 
-
-       !call mpp_update_domains( dy, dx, Atm%domain, flags=SCALAR_PAIR,      &
-       !     gridtype=CGRID_NE_PARAM, complete=.true.) !CHECK
-
-       !generate grid_global for the top level parent grid
-       if (.not. atm%neststruct%nested)then
-
-          if (is_master())then  !! compute the grids as a function of !!npx&npy!! on master then broadcast to other pes
-             do j=1,npy
-                do i=1,npx
-                   grid_global(i,j,1,1) = lon_rad  - 0.5*domain_rad + real(i-1)/real(npx-1)*domain_rad
-                   grid_global(i,j,2,1) = lat_rad  - 0.5*domain_rad + real(j-1)/real(npy-1)*domain_rad
-                   ! for long between 0 and 2pi
-               !    if (grid_global(i,j,1,1) > 2.*pi) grid_global(i,j,1,1) = grid_global(i,j,1,1) - 2.*pi
-                !   if (grid_global(i,j,1,1) < 0.) grid_global(i,j,1,1) = grid_global(i,j,1,1) + 2.*pi
-                enddo
-             enddo
-          endif
-
-          call mpp_broadcast(grid_global, size(grid_global), mpp_root_pe()) !! this grid_global will be sent at the end of init_grid to the nested pes as p_grid to generate the nested grid.
-
-       do j=js,je+1
-          do i=is,ie+1
-             grid(i,j,1)=grid_global(i,j,1,1)
-             grid(i,j,2)=grid_global(i,j,2,1)
+! The following is a hack to get pass the am2 phys init:
+       do j=max(1,jsd),min(jed,npy)
+          do i=max(1,isd),min(ied,npx)
+             grid(i,j,1) = lon_rad - 0.5*domain_rad + real(i-1)/real(npx-1)*domain_rad
+             grid(i,j,2) = lat_rad - 0.5*domain_rad + real(j-1)/real(npy-1)*domain_rad
           enddo
        enddo
 
-       call mpp_update_domains( grid, Atm%domain, position=CORNER) !CHECK
-
-       agrid(:,:,1)  = 99999999999
-       agrid(:,:,2)  = 99999999999
-
-       do j=jsd,jed
-          do i=isd,ied
-             call cell_center2(grid(i,j,  1:2), grid(i+1,j,  1:2),   &
-                  grid(i,j+1,1:2), grid(i+1,j+1,1:2),   &
-                  agrid(i,j,1:2) )
-          enddo
-       enddo
-
-       call mpp_update_domains( agrid, Atm%domain, position=CENTER, complete=.true. )
-
-       endif  !if not nested
-
+       agrid(:,:,1)  = lon_rad
+       agrid(:,:,2)  = lat_rad
 
        sina(:,:) = 1.
        cosa(:,:) = 0.
@@ -1542,16 +1537,6 @@ contains
        e2(1,:,:) = 0.
        e2(2,:,:) = 1.
        e2(3,:,:) = 0.
-
-       call mpp_update_domains( area,   Atm%domain, complete=.true. )
-
-       !##############
-       !SETUP THE NEST
-       !##############
-
-       if (Atm%neststruct%nested) then
-         call setup_aligned_nest(Atm)
-       endif  !if nested
 
     end subroutine setup_cartesian
 
@@ -2461,7 +2446,6 @@ contains
     if (use_timer) call mpp_clock_end (id_timer4)
     if (use_timer) call mpp_clock_begin (id_timer5)
 
-    if (Atm%flagstruct%grid_type /= 4) then !already computed for a cartesian grid
       ! Compute dx
       do j=jsd,jed+1
          do i=isd,ied
@@ -2469,13 +2453,12 @@ contains
          enddo
       enddo
 
-          ! Compute dy
-          do j=jsd,jed
-             do i=isd,ied+1
-                dy(i,j) = great_circle_dist(grid_global(i,j,:,1), grid_global(i,j+1,:,1), radius)
-             enddo
-          enddo
-         endif
+      ! Compute dy
+      do j=jsd,jed
+         do i=isd,ied+1
+            dy(i,j) = great_circle_dist(grid_global(i,j,:,1), grid_global(i,j+1,:,1), radius)
+         enddo
+      enddo
 
       !We will use Michael Herzog's algorithm for computing the weights.
 
@@ -2548,21 +2531,21 @@ contains
       end do
 
 
-      if (Atm%flagstruct%grid_type /= 4) then  !already computed for a cartesian grid
-         do j=jsd,jed
-            do i=isd,ied
-               dxa(i,j) = great_circle_dist(c_grid_u(i,j,:), c_grid_u(i+1,j,:), radius)
-            end do
+      do j=jsd,jed
+         do i=isd,ied
+            dxa(i,j) = great_circle_dist(c_grid_u(i,j,:), c_grid_u(i+1,j,:), radius)
          end do
+      end do
 
-         do j=jsd,jed
-            do i=isd,ied
-               dya(i,j) = great_circle_dist(c_grid_v(i,j,:), c_grid_v(i,j+1,:), radius)
-            end do
+      do j=jsd,jed
+         do i=isd,ied
+            dya(i,j) = great_circle_dist(c_grid_v(i,j,:), c_grid_v(i,j+1,:), radius)
          end do
-      endif
+      end do
+
       if (use_timer) call mpp_clock_end (id_timer6)
       if (use_timer) call mpp_clock_begin (id_timer7)
+
       !Compute interpolation weights. (Recall that the weights are defined with respect to a d-grid)
 
       !U weights
@@ -2672,23 +2655,23 @@ contains
             !Nesting position information
             !BUG multiply by 180 not 90....
             write(*,*) 'NESTED GRID ', Atm%grid_number
-            ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
+            ic = p_ind(1,1,1) ; jc = p_ind(1,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, grid_global(1,1,:,1)*90./pi
-            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
+            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, grid_global(1,npy,:,1)*90./pi
-            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,1)
+            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, grid_global(npx,npy,:,1)*90./pi
-            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
+            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, grid_global(npx,1,:,1)*90./pi
          else
             write(*,*) 'PARENT GRID ', Atm%parent_grid%grid_number, Atm%parent_grid%global_tile
-            ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
+            ic = p_ind(1,1,1) ; jc = p_ind(1,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
+            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,1)
+            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
+            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
          endif
       end if
@@ -3030,13 +3013,8 @@ contains
          minarea = mpp_global_min(domain, area)
 
         if (is_master()) write(*,209) 'MAX    AREA (m*m):', maxarea,            '          MIN AREA (m*m):', minarea
-        if (bounded_domain) then
-           if (is_master()) write(*,210) 'REGIONAL AREA (m*m):', globalarea
-        else
-           if (is_master()) write(*,209) 'GLOBAL AREA (m*m):', globalarea, ' IDEAL GLOBAL AREA (m*m):', 4.0*pi*radius**2
-        endif
+        if (is_master()) write(*,209) 'GLOBAL AREA (m*m):', globalarea, ' IDEAL GLOBAL AREA (m*m):', 4.0*pi*radius**2
  209  format(A,e21.14,A,e21.14)
- 210  format(A,e21.14)
 
         if (bounded_domain) then
            nh = ng-1 !cannot get rarea_c on boundary directly

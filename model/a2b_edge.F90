@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -40,6 +40,9 @@ module a2b_edge_mod
 ! </table>
 
   use fv_grid_utils_mod, only: great_circle_dist
+#ifdef VAN2
+  use fv_grid_utils_mod, only: van2
+#endif
 
   use fv_arrays_mod,     only: fv_grid_type, R_GRID
 
@@ -374,8 +377,8 @@ contains
 
        if (gridstruct%bounded_domain) then
 
-          do j=js-2,je+1+2
-             do i=is-2,ie+1+2
+          do j=js,je+1
+             do i=is,ie+1
                 qout(i,j) = 0.25*(qin(i-1,j-1)+qin(i,j-1)+qin(i-1,j)+qin(i,j))
              enddo
           enddo
