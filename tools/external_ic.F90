@@ -840,7 +840,7 @@ contains
              qt = wt*(1. + sum(Atm%q(i,j,k,2:Atm%flagstruct%nwat)))
           endif
           m_fac = wt / qt
-          do iq=1,ntracers
+          do iq=1,Atm%flagstruct%nwat
              Atm%q(i,j,k,iq) = m_fac * Atm%q(i,j,k,iq)
           enddo
           Atm%delp(i,j,k) = qt
@@ -1955,7 +1955,7 @@ contains
       real(kind=4), allocatable:: uec(:,:,:), vec(:,:,:), tec(:,:,:), wec(:,:,:)
       real(kind=4), allocatable:: psec(:,:), zsec(:,:), zhec(:,:,:), qec(:,:,:,:)
       real(kind=4), allocatable:: psc(:,:)
-      real(kind=4), allocatable:: sphumec(:,:,:)
+      real(kind=4), allocatable:: sphumec(:,:,:), o3ec(:,:,:)
       real, allocatable:: psc_r8(:,:), zhc(:,:,:), qc(:,:,:,:)
       real, allocatable:: lat(:), lon(:), ak0(:), bk0(:)
       real, allocatable:: pt_c(:,:,:), pt_d(:,:,:)
@@ -1993,7 +1993,7 @@ contains
       real, allocatable:: o3mr_gfs(:,:,:)
 #endif
       real, allocatable:: ak_gfs(:), bk_gfs(:)
-      integer :: id_res, ntprog, ntracers, ks, iq, nt
+      integer :: id_res, ntprog, ntracers, ks, iq, nt, levsp
       character(len=64) :: tracer_name
       integer :: levp_gfs = 64
       type(FmsNetcdfDomainFile_t) :: ORO_restart, GFS_restart
@@ -2015,6 +2015,10 @@ contains
       ied = Atm%bd%ied
       jsd = Atm%bd%jsd
       jed = Atm%bd%jed
+      call open_ncfile( trim(fn_gfs_ctl), ncid )
+      call get_ncdim1( ncid, 'levsp', levsp )
+      call close_ncfile( ncid )
+      levp_gfs = levsp-1
 
       npz = Atm%npz
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers, num_prog=ntprog)
@@ -2098,8 +2102,9 @@ contains
       call mpp_update_domains( Atm%phis, Atm%domain )
 
 !! Read in o3mr, ps and zh from GFS_data.tile?.nc
+    if (Atm%flagstruct%use_gfsO3 ) then
 #ifdef MULTI_GASES
-      allocate ( spo_gfs(is:ie,js:je,levp_gfs))
+      allocate (spo_gfs(is:ie,js:je,levp_gfs))
       allocate (spo2_gfs(is:ie,js:je,levp_gfs))
       allocate (spo3_gfs(is:ie,js:je,levp_gfs))
 #else
@@ -2172,6 +2177,7 @@ contains
 #else
       deallocate (o3mr_gfs)
 #endif
+    endif
 
 !! Start to read EC data
       fname = Atm%flagstruct%res_latlon_dynamics
@@ -2272,6 +2278,17 @@ contains
       call get_var_att_double ( ncid, 't', 'add_offset', offset )
       tec(:,:,:) = tec(:,:,:)*scale_value + offset
       if(is_master()) write(*,*) 'done reading tec'
+! read in ozone:
+      if ( .not. Atm%flagstruct%use_gfsO3 ) then
+          allocate ( o3ec(1:im,jbeg:jend, 1:km) )
+
+          call get_var3_r4( ncid, 'o3', 1,im, jbeg,jend, 1,km, o3ec(:,:,:) )
+          call get_var_att_double ( ncid, 'o3', 'scale_factor', scale_value )
+          call get_var_att_double ( ncid, 'o3', 'add_offset', offset )
+          o3ec(:,:,:) = o3ec(:,:,:)*scale_value + offset
+          if(is_master()) write(*,*) 'done reading o3mr ec',o3ec(1,jbeg,km)
+      endif
+
 
 ! read in specific humidity:
       allocate ( sphumec(1:im,jbeg:jend, 1:km) )
@@ -2283,9 +2300,9 @@ contains
       if(is_master()) write(*,*) 'done reading sphum ec'
 
 ! Read in other tracers from EC data and remap them into cubic sphere grid:
-      allocate ( qec(1:im,jbeg:jend,1:km,5) )
+      allocate ( qec(1:im,jbeg:jend,1:km,ntracers) )
 
-      do n = 1, 5
+      do n = 1, ntracers
         if (n == sphum) then
            qec(:,:,:,sphum) = sphumec(:,:,:)
            deallocate ( sphumec )
@@ -2313,9 +2330,18 @@ contains
            call get_var_att_double ( ncid, 'cswc', 'add_offset', offset )
            qec(:,:,:,snowwat) = qec(:,:,:,snowwat)*scale_value + offset
            if(is_master()) write(*,*) 'done reading cswc ec'
-        else
-           if(is_master()) write(*,*) 'nq is more then 5!'
-        endif
+#ifdef MULTI_GASES
+         else if (n == spo .and. (.not. Atm%flagstruct%use_gfsO3)) then
+           qec(:,:,:,spo) = o3ec(:,:,:)
+#else
+         else if (n == o3mr .and. (.not. Atm%flagstruct%use_gfsO3)) then
+           qec(:,:,:,o3mr) = o3ec(:,:,:)
+#endif
+           deallocate ( o3ec )
+         else
+           qec(:,:,:,n) = 0.0
+           if(is_master()) write(*,*) 'tracer number = ', n, 'is not in the IFS IC!'
+         endif
 
       enddo
 
@@ -2376,9 +2402,9 @@ contains
       if(is_master()) write(*,*) 'done interpolate psec/zhec into cubic grid psc/zhc!'
 
 ! Read in other tracers from EC data and remap them into cubic sphere grid:
-      allocate ( qc(is:ie,js:je,km,6) )
+      allocate ( qc(is:ie,js:je,km,ntracers) )
 
-      do n = 1, 5
+      do n = 1, ntracers
 !$OMP parallel do default(none) shared(n,is,ie,js,je,km,s2c,id1,id2,jdc,qc,qec) &
 !$OMP               private(i1,i2,j1)
         do k=1,km
@@ -2432,7 +2458,7 @@ contains
       psc_r8(:,:) = psc(:,:)
       deallocate ( psc )
 
-      call remap_scalar(Atm, km, npz, 6, ak0, bk0, psc_r8, qc, zhc, wc)
+      call remap_scalar(Atm, km, npz, ntracers, ak0, bk0, psc_r8, qc, zhc, wc)
       call mpp_update_domains(Atm%phis, Atm%domain)
       if(is_master()) write(*,*) 'done remap_scalar'
 
@@ -2602,7 +2628,7 @@ contains
                                 Atm%q(i,j,k,graupel)) ! assume hailwat is zero if nwat=7
                endif
                m_fac = wt / qt
-               do iq=1,ntracers
+               do iq=1,Atm%flagstruct%nwat
                   Atm%q(i,j,k,iq) = m_fac * Atm%q(i,j,k,iq)
                enddo
                Atm%delp(i,j,k) = qt
@@ -3051,6 +3077,12 @@ contains
 
 !$OMP parallel do default(none) &
 !$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,hailwat,data_source_fv3gfs,&
+#ifdef MULTI_GASES
+                  spo,            &
+#else
+                  o3mr,           &
+#endif
+
 !$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm,z500,t_in) &
 !$OMP             private(l,m,pst,pn,gz,pe0,pn0,pe1,pn1,dp2,qp,qn1,gz_fv)
 
@@ -3133,7 +3165,17 @@ contains
 ! The HiRam step of blending model sphum with NCEP data is obsolete because nggps is always cold starting...
          do k=1,npz
             do i=is,ie
-               Atm%q(i,j,k,iq) = qn1(i,k)
+#ifdef MULTI_GASES
+            if ( iq==spo ) then
+#else
+            if ( iq==o3mr ) then
+#endif
+               if (.not. Atm%flagstruct%use_gfsO3) then
+                  Atm%q(i,j,k,iq) = qn1(i,k)
+               endif
+             else
+                  Atm%q(i,j,k,iq) = qn1(i,k)
+               endif
             enddo
          enddo
       enddo
