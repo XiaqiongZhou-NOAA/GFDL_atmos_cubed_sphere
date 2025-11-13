@@ -3078,9 +3078,9 @@ contains
 !$OMP parallel do default(none) &
 !$OMP             shared(sphum,liq_wat,rainwat,ice_wat,snowwat,graupel,hailwat,data_source_fv3gfs,&
 #ifdef MULTI_GASES
-                  spo,            &
+!$OMP                  spo,            &
 #else
-                  o3mr,           &
+!$OMP                  o3mr,           &
 #endif
 
 !$OMP                    cld_amt,ncnst,npz,is,ie,js,je,km,k2,ak0,bk0,psc,zh,omga,qa,Atm,z500,t_in) &
